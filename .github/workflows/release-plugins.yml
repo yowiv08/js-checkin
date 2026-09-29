@@ -73,6 +73,6 @@ jobs:
             artifacts/release/js-checkin.zip \
             artifacts/release/js-checkin.zip.sha256 \
             artifacts/release/release-index.json \
-            --verify-tag --title "中转站签到 $RELEASE_TAG" \
+            --verify-tag --title "js-checkin $RELEASE_TAG" \
             --generate-notes --notes-file artifacts/release/release-notes.md --draft
           gh release edit "$RELEASE_TAG" --draft=false

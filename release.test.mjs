@@ -54,7 +54,7 @@ test("实际生成 ZIP、索引、SHA256 与功能介绍，符合 Router2API 发
   assert.equal(entry.contentSha256,hash(content.join("\n")));
   assert.notEqual((await fs.readFile(path.join(out,"release-index.json"))).subarray(0,3).toString("hex"),"efbbbf");
   const notes=await fs.readFile(path.join(out,"release-notes.md"),"utf8");
-  assert.match(notes,/中转站签到/);assert.ok(notes.includes(manifest.description));assert.doesNotMatch(notes,/[（(][^）)]*[）)]/);
+  assert.match(notes,/^# js-checkin\r?\n/);assert.ok(notes.includes(manifest.description));assert.doesNotMatch(notes,/中转站签到|[（(][^）)]*[）)]/);
   const readZip=`
     $ErrorActionPreference = 'Stop'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -143,6 +143,8 @@ test("工作流使用本项目构建，tag 发布、手动仅打包，发布权�
   assert.match(workflow,/needs: build/);assert.match(workflow,/contents: write/);
   assert.match(workflow,/actions\/upload-artifact@v4/);assert.match(workflow,/actions\/download-artifact@v4/);
   assert.match(workflow,/gh release create "\$RELEASE_TAG"/);assert.match(workflow,/--verify-tag/);
+  assert.ok(workflow.includes('--title "js-checkin $RELEASE_TAG"'));
+  assert.doesNotMatch(workflow,/中转站签到/);
   assert.match(workflow,/--notes-file artifacts\/release\/release-notes\.md --draft/);
   assert.match(workflow,/gh release edit "\$RELEASE_TAG" --draft=false/);
   assert.doesNotMatch(workflow,/pull_request_target|sdk\/js|plugins\/\*|--clobber|npm.*test:browser/);

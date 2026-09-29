@@ -136,7 +136,7 @@ $index | ConvertTo-Json -Depth 5 |
 "$($entry.sha256)  $asset" |
     Set-Content -LiteralPath (Join-Path $outputPath "$asset.sha256") -Encoding ascii
 $notes = @(
-    "# $($entry.name)", '', $entry.description, '',
+    "# $($entry.id)", '', $entry.description, '',
     "版本：$($entry.version)", "下载：$asset"
 ) -join "`n"
 $customNotes = Join-Path $PSScriptRoot "release-notes/$Tag.md"
