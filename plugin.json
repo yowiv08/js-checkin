@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "js-checkin",
+  "name": "中转站签到",
+  "description": "New API、AnyRouter、AgentRouter 签到管理，支持余额查询、自定义 Cron、可视化与 JSON 配置。",
+  "version": "1.1.1",
+  "runtime": "jint",
+  "hostApi": "1",
+  "format": "esm-bundle",
+  "entry": "src/plugin.mjs",
+  "platform": {
+    "name": "js-checkin",
+    "displayName": "中转站签到",
+    "credentialKinds": ["Custom"],
+    "modelCacheTtlSeconds": 300
+  },
+  "hooks": {
+    "invoke": "invoke",
+    "getModels": "getModels",
+    "validateCredential": "validateCredential"
+  },
+  "permissions": {
+    "accounts": ["read", "readCredentials", "write"],
+    "sharedState": ["read", "write"],
+    "tasks": ["writeLog"],
+    "jobs": ["start", "read", "cancel"],
+    "crypto": ["hash", "random", "decimal"],
+    "http": { "origins": [], "routes": ["direct", "pool"], "manageOrigins": true }
+  },
+  "policy": { "maxAttempts": 1 },
+  "endpoints": [
+    { "method": "GET", "path": "accounts", "handler": "listAccounts", "auth": "AdminSession" },
+    { "method": "POST", "path": "accounts/save", "handler": "saveAccount", "auth": "AdminSession" },
+    { "method": "POST", "path": "accounts/delete", "handler": "deleteAccount", "auth": "AdminSession" },
+    { "method": "POST", "path": "checkin/start", "handler": "startCheckIn", "auth": "AdminSession" },
+    { "method": "POST", "path": "schedule/preview", "handler": "previewSchedule", "auth": "AdminSession" },
+    { "method": "POST", "path": "balance/start", "handler": "startBalance", "auth": "AdminSession" },
+    { "method": "GET", "path": "jobs/status", "handler": "jobStatus", "auth": "AdminSession" },
+    { "method": "POST", "path": "jobs/cancel", "handler": "cancelJob", "auth": "AdminSession" }
+  ],
+  "tasks": [
+    { "name": "js-checkin-daily", "handler": "dailyCheckIn", "cron": "0 * * * * *", "timeoutSeconds": 60, "description": "自动签到" }
+  ],
+  "jobs": [
+    { "name": "js-checkin-run", "handler": "checkInJob", "timeoutSeconds": 1800, "description": "批量签到与进度查询" },
+    { "name": "js-checkin-balance", "handler": "balanceJob", "timeoutSeconds": 120, "description": "余额查询" }
+  ],
+  "page": { "title": "中转站签到", "entry": "ui/index.html" }
+}

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>中转站签到 · Check-in Studio</title>
+  <style>
+    :root{color-scheme:light;--ink:#20263e;--muted:#7a8097;--line:#e9ebf3;--purple:#6858df;--surface:#fff;--green:#13856c;--red:#bc4459;--bg:#f6f7fb}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);font:14px/1.55 Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink)}
+    button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}button,input,select,textarea{outline:none}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #bab0ff;outline-offset:2px}
+    button{border:1px solid var(--line);border-radius:10px;background:white;color:var(--ink);padding:9px 14px;transition:background .15s,transform .15s}button:hover:not(:disabled){background:#f4f1ff;transform:translateY(-1px)}
+    .primary{background:var(--purple);border-color:var(--purple);color:white;box-shadow:0 4px 12px #6858df20}.primary:hover:not(:disabled){background:#5847ce}.quiet{background:transparent}.danger{color:var(--red)}
+    .app{max-width:1440px;margin:auto;padding:30px 34px 48px}.topline{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+    .brand{display:flex;gap:11px;align-items:center;font-weight:750;font-size:16px;letter-spacing:.2px}.brandmark{display:grid;place-items:center;width:34px;height:34px;background:#eeeaff;border-radius:11px;color:var(--purple);font-size:21px}
+    .tag,.badge{display:inline-flex;align-items:center;gap:6px;border-radius:7px;background:#f0f2f8;padding:3px 8px;font-size:11px;font-weight:600;white-space:nowrap}.tag{color:var(--muted);font-weight:500}
+    .hero{position:relative;overflow:hidden;background:linear-gradient(116deg,#23253f,#39305b 65%,#4a3d78);border-radius:22px;padding:32px 34px;color:white;display:flex;align-items:center;justify-content:space-between;gap:25px;min-height:178px}
+    .hero:after{content:"";position:absolute;right:-40px;top:-120px;width:340px;height:340px;border:1px solid #ffffff18;border-radius:50%;box-shadow:0 0 0 44px #ffffff04,0 0 0 88px #ffffff03;pointer-events:none}
+    .eyebrow{font-size:10px;letter-spacing:3px;color:#b5aacd;font-weight:700}.hero h1{font-size:29px;letter-spacing:-.6px;margin:8px 0}.hero p{color:#bfc0d5;margin:0;max-width:650px;font-size:13px}
+    .schedule{text-align:right;position:relative;z-index:1;flex-shrink:0;border-left:1px solid #ffffff20;padding-left:38px}.clock{font-size:38px;line-height:1.2;letter-spacing:-2px;font-weight:300;font-variant-numeric:tabular-nums}.schedule small{color:#bbb5d0;font-size:11px}.live{width:6px;height:6px;background:#9ce3bd;border-radius:50%;display:inline-block;margin-right:7px}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin:22px 0 28px}.stat{background:white;border:1px solid var(--line);border-radius:15px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center}.stat-label{color:var(--muted);font-size:12px}.stat strong{font-size:29px;font-weight:650;display:block;line-height:1.4}.stat-icon{width:39px;height:39px;border-radius:12px;display:grid;place-items:center;background:#f0edff;color:var(--purple);font-size:20px}.stat:nth-child(2) .stat-icon{background:#eaf7f2;color:var(--green)}.stat:nth-child(3) .stat-icon{background:#fff3e6;color:#b87b33}.stat:nth-child(4) .stat-icon{background:#edf2fc;color:#5379ad}
+    .section-title{font-weight:700;font-size:17px}.section-note{color:var(--muted);font-size:12px;margin-top:2px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+    .filters{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}.tabs{display:flex;padding:4px;background:#eeeff5;border-radius:11px;gap:3px}.tabs button{border:0;background:transparent;padding:7px 14px;color:var(--muted);font-size:12px;box-shadow:none}.tabs button.active{background:white;color:var(--purple);box-shadow:0 2px 5px #27304b08;font-weight:650}
+    .search{width:220px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:white}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}
+    .account{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:21px;box-shadow:0 3px 10px #23253f02;display:flex;flex-direction:column;gap:16px}.account:hover{border-color:#d5cffa;box-shadow:0 6px 20px #38267907}.account.off{background:#fbfbfd}
+    .card-head{display:flex;gap:12px;align-items:center}.provider{width:41px;height:41px;border-radius:13px;display:grid;place-items:center;flex-shrink:0;font-size:19px;font-weight:750;background:#edf3ff;color:#4f79bb}.provider.AnyRouter{background:#eeeaff;color:#7862d8}.provider.AgentRouter{background:#e8f5f0;color:#378b76}
+    .card-name{font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.identity{min-width:0;flex:1}.domain{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-dot{width:7px;height:7px;border-radius:50%;background:#4daf93}.status-dot.off{background:#babecb}
+    .card-meta{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--muted)}.result{border:1px solid #f0f1f7;background:#f9fafc;border-radius:11px;padding:12px}.result-title{font-size:12px;font-weight:650;display:flex;align-items:center;gap:7px}.result-msg{font-size:11px;color:var(--muted);margin-top:4px;min-height:32px;overflow-wrap:anywhere}.result-time{font-size:10px;color:#989cb0;margin-top:6px}
+    .result.Success,.result.Already{background:#f1faf6;border-color:#e1f0e9}.result.Success .result-title,.result.Already .result-title{color:var(--green)}.result.Uncertain,.result.Challenge,.result.RateLimited{background:#fff9ef;border-color:#f8eddc}.result.Uncertain .result-title,.result.Challenge .result-title,.result.RateLimited .result-title{color:#a16f27}.result.Failed,.result.AuthExpired{background:#fff5f6;border-color:#f6e7eb}.result.Failed .result-title,.result.AuthExpired .result-title{color:var(--red)}
+    .toggles{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}.toggle{display:inline-flex;align-items:center;gap:7px;cursor:pointer}.toggle input{appearance:none;width:29px;height:17px;border-radius:20px;background:#d8dce8;margin:0;position:relative;cursor:pointer}.toggle input:checked{background:var(--purple)}.toggle input:before{content:"";position:absolute;top:3px;left:3px;width:11px;height:11px;background:white;border-radius:50%;transition:left .15s}.toggle input:checked:before{left:15px}
+    .card-actions{display:flex;gap:7px;margin-top:auto;border-top:1px solid var(--line);padding-top:14px}.card-actions button{font-size:11px;padding:8px 11px}.card-actions .run{flex:1;background:#f2eeff;color:var(--purple);border-color:transparent;font-weight:650}.card-actions .danger{padding-inline:8px}
+    .empty{grid-column:1/-1;background:white;border:1px dashed #dce0ec;border-radius:16px;text-align:center;padding:56px 20px;color:var(--muted)}.empty strong{display:block;color:var(--ink);font-size:17px;margin-bottom:8px}.empty p{font-size:12px;margin:0 0 18px}
+    .job-panel{background:white;border:1px solid #ddd7fa;border-radius:15px;padding:19px 22px;margin:0 0 24px}.job-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}.job-heading strong{font-size:13px}.job-heading small{display:block;color:var(--muted);font-size:11px;margin-top:4px}.track{height:5px;background:#efedf7;border-radius:5px;margin-top:15px;overflow:hidden}.track span{display:block;background:var(--purple);height:100%;transition:width .3s}.job-results{margin-top:12px;display:flex;gap:7px;flex-wrap:wrap}.job-results .badge{white-space:normal;overflow-wrap:anywhere;font-weight:400}
+    dialog{border:0;border-radius:20px;box-shadow:0 28px 100px #20263e40;padding:0;width:min(900px,calc(100% - 32px));max-height:90vh;color:var(--ink);background:white}dialog::backdrop{background:#161a345c;backdrop-filter:blur(4px)}.modal-head{padding:22px 26px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.modal-head h2{font-size:18px;margin:0}.modal-head p{font-size:11px;color:var(--muted);margin:3px 0 0}.close{border:0;font-size:20px;padding:4px 10px;color:var(--muted)}
+    .modal-body{padding:21px 26px;max-height:66vh;overflow:auto}.editor-tools{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px}.editor-tools .actions button{font-size:11px;padding:7px 10px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field{display:flex;flex-direction:column;gap:6px;font-size:12px}.field>span{font-weight:600}.field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid #dfe3ee;border-radius:9px;background:#fdfdff;color:var(--ink);min-width:0}.field textarea{resize:vertical;font:12px/1.6 Consolas,monospace}.field small{color:var(--muted);font-size:10px}.wide{grid-column:1/-1}.form-switches{display:flex;gap:30px;padding:5px 0}.approval{display:flex;gap:8px;align-items:flex-start;margin-top:18px;font-size:12px;color:var(--muted)}.approval input{margin-top:4px;accent-color:var(--purple)}
+    .json-editor{width:100%;min-height:360px;resize:vertical;border:1px solid #dcd7f1;border-radius:12px;padding:19px;background:#24263a;color:#d2d7f2;font:12px/1.8 Consolas,"SFMono-Regular",monospace;tab-size:2}.error{color:var(--red);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}.modal-foot{border-top:1px solid var(--line);display:flex;justify-content:flex-end;align-items:center;padding:17px 26px;gap:14px}
+    .toast{position:fixed;bottom:25px;left:50%;transform:translateX(-50%);z-index:5;background:#24263d;color:white;border-radius:12px;padding:12px 20px;box-shadow:0 8px 30px #20263e30;max-width:min(640px,90vw);font-size:12px}.toast.bad{background:#933c52}[hidden]{display:none!important}
+    .balance-box{border-radius:12px;background:linear-gradient(125deg,#f2efff,#f7f9ff);border:1px solid #e9e4ff;padding:14px 15px}.balance-head{display:flex;justify-content:space-between;align-items:center;color:#80759e;font-size:11px;gap:8px}.balance-head button{font-size:10px;padding:4px 8px;background:#ffffff90;border-color:#e6dff7}.balance-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin:6px 0;font-variant-numeric:tabular-nums}.balance-value strong{font-size:25px;font-weight:650;letter-spacing:-.5px;color:#4d407d;overflow-wrap:anywhere;min-width:0}.balance-value span{font-size:11px;color:#8b81a4}.balance-note{font-size:10px;color:#8a829a;overflow-wrap:anywhere}.balance-note.stale{color:#a47832}.card-schedule{font-size:10px;color:var(--muted);display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}.card-schedule code{color:#786a9c;overflow-wrap:anywhere}.cron-settings{background:#f8f7fd;border:1px solid #e8e3f5;border-radius:12px;padding:15px;display:grid;gap:12px}.cron-presets{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.cron-presets input{width:112px;padding:6px 9px;border:1px solid #ddd6ed;border-radius:7px}.cron-presets button{padding:6px 10px;font-size:11px}.schedule-preview{margin-top:14px;display:flex;gap:10px;align-items:flex-start;font-size:11px;color:var(--muted)}.schedule-preview button{font-size:11px;white-space:nowrap}.schedule-preview output{white-space:pre-line;padding:5px 0;overflow-wrap:anywhere}.form-switches{flex-wrap:wrap;gap:14px 25px}
+    @media(min-width:1250px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:1000px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.app{padding:24px}.stats{gap:10px}.stat{padding:15px}.stat-icon{display:none}}
+    @media(max-width:640px){.app{padding:17px 14px}.topline{margin-bottom:16px}.hero{padding:25px 21px;min-height:155px}.hero h1{font-size:25px}.schedule{display:none}.stats{grid-template-columns:repeat(2,1fr);margin:16px 0 22px}.stat strong{font-size:25px}.stat-icon{display:grid}.grid{grid-template-columns:1fr}.toolbar,.filters{align-items:stretch;flex-direction:column;gap:12px}.toolbar .actions{justify-content:flex-end}.search{width:100%}.tabs{justify-content:space-between}.tabs button{padding:7px 10px}.footer{flex-direction:column}.modal-head,.modal-body{padding:18px}.modal-foot{padding:14px 18px}.fields{grid-template-columns:1fr}.wide{grid-column:auto}.editor-tools{align-items:stretch;flex-direction:column}.editor-tools .actions{justify-content:flex-end}.modal-foot small{display:none}.modal-foot{justify-content:flex-end}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+</head>
+<body>
+<main class="app">
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v1.1.1</span></header>
+  <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询</p></div><div class="schedule"><small><span class="live"></span>默认签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
+  <section class="stats" aria-label="账号概况">
+    <div class="stat"><div><span class="stat-label">全部账号</span><strong id="statTotal">0</strong></div><span class="stat-icon">▦</span></div>
+    <div class="stat"><div><span class="stat-label">今日已确认</span><strong id="statSuccess">0</strong></div><span class="stat-icon">✓</span></div>
+    <div class="stat"><div><span class="stat-label">需要关注</span><strong id="statAttention">0</strong></div><span class="stat-icon">!</span></div>
+    <div class="stat"><div><span class="stat-label">开启自动签到</span><strong id="statAuto">0</strong></div><span class="stat-icon">◷</span></div>
+  </section>
+  <section id="jobPanel" class="job-panel" aria-live="polite" hidden>
+    <div class="job-heading"><div><strong id="jobTitle">后台任务</strong><small id="jobSubtitle"></small></div><div class="actions"><button id="pollJob" class="quiet">刷新进度</button><button id="cancelJob" class="danger">取消任务</button></div></div>
+    <div class="track"><span id="jobBar" style="width:0%"></span></div><div id="jobResults" class="job-results"></div>
+  </section>
+  <div class="toolbar"><div class="section-title">签到账号</div><div class="actions"><button id="refresh">↻ 刷新</button><button id="runAll">全部签到</button><button id="add" class="primary">＋ 添加账号</button></div></div>
+  <div class="filters"><nav class="tabs" id="filters" aria-label="站点筛选"><button data-type="all" class="active" aria-pressed="true">全部</button><button data-type="NewAPI" aria-pressed="false">New API</button><button data-type="AnyRouter" aria-pressed="false">AnyRouter</button><button data-type="AgentRouter" aria-pressed="false">AgentRouter</button></nav><input class="search" id="search" aria-label="搜索账号" placeholder="搜索备注、站点地址…" type="search"></div>
+  <section id="cards" class="grid" aria-label="签到账号列表"><div class="empty">正在读取账号…</div></section>
+</main>
+<dialog id="editor" aria-labelledby="editorTitle">
+  <form id="accountForm" novalidate>
+    <header class="modal-head"><h2 id="editorTitle">添加账号</h2><button type="button" class="close" id="closeEditor" aria-label="关闭编辑器">×</button></header>
+    <div class="modal-body">
+      <div class="editor-tools"><div class="tabs"><button type="button" id="visualTab" class="active" aria-pressed="true">可视化</button><button type="button" id="jsonTab" aria-pressed="false">JSON</button></div><div class="actions"><button type="button" id="importJson">导入</button><button type="button" id="exportJson">导出</button><button type="button" id="copyJson">复制</button></div></div>
+      <section id="visualEditor" class="fields">
+        <label class="field"><span>账号备注</span><input name="label" maxlength="128" placeholder="账号名称" required></label>
+        <label class="field"><span>站点类型</span><select name="siteType"><option value="NewAPI">New API</option><option value="AnyRouter">AnyRouter</option><option value="AgentRouter">AgentRouter</option></select></label>
+        <label class="field wide"><span>站点地址</span><input name="baseUrl" placeholder="https://你的站点" required></label>
+        <label class="field cookie-field wide"><span>Cookie</span><textarea name="cookie" rows="3" spellcheck="false" placeholder="session=…" autocomplete="off"></textarea></label>
+        <label class="field cookie-field"><span>User ID</span><input name="userId" inputmode="numeric" placeholder="请求头 New-Api-User 的值"></label>
+        <label class="field cookie-field"><span>User-Agent</span><input name="userAgent" placeholder="选填"></label>
+        <label class="field agent-field" hidden><span>用户名或邮箱</span><input name="username" autocomplete="off"></label>
+        <label class="field agent-field" hidden><span>密码</span><input name="password" type="text" autocomplete="off" spellcheck="false"></label>
+        <label class="field wide"><span>网络路线</span><select name="route"><option value="direct">直连</option><option value="pool">代理池</option></select></label>
+        <section class="cron-settings wide" aria-label="自动签到时间">
+          <label class="field"><span>Cron <small>UTC+8</small></span><input name="cron" value="0 10 10 * * *" spellcheck="false" placeholder="0 10 10 * * *"><small>支持五字段或六字段，秒位为 0。</small></label>
+          <div class="cron-presets"><span>每日时间</span><input id="dailyTime" type="time" value="10:10" aria-label="每日签到时间"><button type="button" id="applyTime">应用时间</button><button type="button" id="resetCron">恢复 10:10</button></div>
+        </section>
+        <div class="form-switches wide"><label class="toggle"><input type="checkbox" name="enabled" checked>启用账号</label><label class="toggle"><input type="checkbox" name="autoCheckIn">自动签到</label><label class="toggle"><input type="checkbox" name="queryBalance" checked>签到后更新余额</label></div>
+      </section>
+      <section id="jsonEditor" hidden><textarea id="jsonText" class="json-editor" aria-label="JSON 账号配置" spellcheck="false"></textarea></section>
+      <div class="schedule-preview"><button type="button" id="previewCron">预览下次时间</button><output id="cronPreview" aria-live="polite"></output></div>
+      <label class="approval"><input type="checkbox" name="approveOrigin"><span>授权访问此站点</span></label>
+      <p id="formError" class="error" role="alert"></p>
+    </div>
+    <footer class="modal-foot"><div class="actions"><button type="button" id="discard">取消</button><button type="submit" id="save" class="primary">保存</button></div></footer>
+  </form>
+</dialog>
+<dialog id="confirmation" aria-labelledby="confirmationTitle" style="max-width:470px">
+  <header class="modal-head"><h2 id="confirmationTitle">确认操作</h2></header>
+  <div class="modal-body"><p id="confirmationText" style="margin:0;line-height:1.85;overflow-wrap:anywhere"></p></div>
+  <footer class="modal-foot"><div class="actions" style="margin-left:auto"><button type="button" id="rejectConfirm">取消</button><button type="button" id="acceptConfirm" class="primary">确认继续</button></div></footer>
+</dialog>
+<input id="jsonFile" type="file" accept=".json,application/json" hidden>
+<div id="toast" class="toast" role="status" hidden></div>
+<script>
+(() => {
+  "use strict";
+  const $ = selector => document.querySelector(selector), form = $("#accountForm"), editor = $("#editor");
+  const fields = ["label","siteType","baseUrl","cookie","userId","userAgent","username","password","route","enabled","autoCheckIn","cron","queryBalance"];
+  const names = {NewAPI:"New API",AnyRouter:"AnyRouter",AgentRouter:"AgentRouter"};
+  const defaults = {NewAPI:"",AnyRouter:"https://anyrouter.top",AgentRouter:"https://agentrouter.org"};
+  const statuses = {Success:"签到成功",Already:"今日已签到",Skipped:"已跳过",AuthExpired:"认证失效",Challenge:"需要人机验证",RateLimited:"请求限流",Failed:"签到失败",Uncertain:"结果不确定"};
+  const jobStates = {Queued:"等待执行",Running:"正在执行",Completed:"执行结束",Failed:"任务失败",Cancelled:"任务已取消"};
+  let accounts=[], filter="all", mode="visual", editing=null, job=null, starting=false, cancelRequested=false, pollTimer, toastTimer, polling=false, saving=false, confirmationResolve=null;
+  const running = () => job && ["Queued","Running"].includes(job.state);
+  const today = () => new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+  const time = value => value ? new Date(value).toLocaleString("zh-CN",{hour12:false}) : "尚未执行";
+  const api = (method,route,body) => window.Router2API.request(method,route,body);
+  // 仅处理系统反馈；账号名称、Cookie、密码和 JSON 内容始终原样保留。
+  const messageText = value => String(value??"").replace(/\([^()]*\)|（[^（）]*）/g,"").split(/[；。]/,1)[0].trim();
+  function node(tag,cls,text){const item=document.createElement(tag);if(cls)item.className=cls;if(text!==undefined)item.textContent=text;return item}
+  function notify(message,bad=false){const toast=$("#toast");toast.textContent=messageText(message);toast.className="toast"+(bad?" bad":"");toast.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.hidden=true,6000)}
+  // 宿主 iframe 不授予 allow-modals：不能使用 window.confirm/alert/prompt。
+  function ask(message){
+    if(confirmationResolve)return Promise.resolve(false);
+    $("#confirmationText").textContent=message;$("#confirmation").showModal();$("#rejectConfirm").focus();
+    return new Promise(resolve=>confirmationResolve=resolve);
+  }
+  function answer(value){$("#confirmation").close();const resolve=confirmationResolve;confirmationResolve=null;resolve?.(value)}
+  $("#acceptConfirm").onclick=()=>answer(true);$("#rejectConfirm").onclick=()=>answer(false);
+  $("#confirmation").addEventListener("cancel",event=>{event.preventDefault();answer(false)});
+  function activeButtons(){ $("#runAll").disabled=starting||!!running()||!accounts.some(a=>a.available); document.querySelectorAll("button.run,button.balance-refresh").forEach(b=>b.disabled=starting||!!running()||b.dataset.available!=="true"); }
+  function action(label,actionName,account,cls=""){const button=node("button",cls,label);button.type="button";button.dataset.action=actionName;button.dataset.id=account.id;return button}
+  function toggle(label,key,account){const wrap=node("label","toggle"),box=node("input");box.type="checkbox";box.checked=!!account[key];box.dataset.toggle=key;box.dataset.id=account.id;wrap.append(box,document.createTextNode(label));return wrap}
+  function render(){
+    $("#statTotal").textContent=accounts.length;$("#statSuccess").textContent=accounts.filter(a=>a.lastSuccessDay===today()).length;
+    $("#statAttention").textContent=accounts.filter(a=>a.invalid||["AuthExpired","Challenge","RateLimited","Failed","Uncertain"].includes(a.lastResult?.status)).length;
+    $("#statAuto").textContent=accounts.filter(a=>a.available&&a.autoCheckIn).length;
+    const query=$("#search").value.trim().toLowerCase(), shown=accounts.filter(a=>(filter==="all"||a.siteType===filter)&&[a.label,a.baseUrl].some(v=>(v||"").toLowerCase().includes(query)));
+    const cards=$("#cards");cards.replaceChildren();
+    if(!shown.length){const empty=node("div","empty");empty.append(node("strong","",accounts.length?"没有匹配的账号":"暂无账号"));if(!accounts.length){const b=node("button","primary","＋ 添加账号");b.onclick=()=>openEditor();empty.append(b)}cards.append(empty)}
+    for(const a of shown){
+      const card=node("article","account"+(a.available?"":" off"));card.dataset.account=a.id;
+      const head=node("div","card-head"),identity=node("div","identity");identity.append(node("div","card-name",a.label),node("div","domain",a.baseUrl||"配置不可用"));head.append(node("div","provider "+(a.siteType||""),a.siteType==="AnyRouter"?"A":a.siteType==="AgentRouter"?"R":"N"),identity,node("span","status-dot"+(a.available?"":" off")));
+      const meta=node("div","card-meta");meta.append(node("span","badge",names[a.siteType]||"未知类型"),node("span","",a.route==="pool"?"代理池":"直连"));
+      const last=a.lastResult,result=node("div","result "+(last?.status||""));result.append(node("div","result-title",a.invalid?"配置不可用":statuses[last?.status]||"尚未签到"));
+      if(a.error||last?.message&&!["Success","Already"].includes(last.status))result.append(node("div","result-msg",messageText(a.error||last.message)));
+      if(last?.finishedAt)result.append(node("div","result-time",time(last.finishedAt)));
+      const balance=node("div","balance-box"),balanceHead=node("div","balance-head"),snapshot=a.balance?.snapshot;
+      balanceHead.append(node("span","","可用余额"+(a.balance?.state==="Stale"?" · 上次记录":"")));
+      if(!a.invalid&&a.siteType!=="AgentRouter"){const refresh=action("↻ 刷新余额","balance",a,"balance-refresh");refresh.dataset.available=String(!!a.available);balanceHead.append(refresh)}
+      const amount=node("div","balance-value");amount.append(node("strong","",snapshot?.amount??"—"),node("span","",snapshot?.unit??"尚未获取"));
+      balance.append(balanceHead,amount);
+      if(snapshot)balance.append(node("div","balance-note","更新于 "+time(snapshot.updatedAt)),node("div","balance-note","quota "+snapshot.quota));
+      if(a.balance?.error)balance.append(node("div","balance-note stale",messageText(a.balance.error)));
+      const schedule=node("div","card-schedule");schedule.append(node("span","",a.autoCheckIn?"◷ 自动 · UTC+8":"◷ 自动未开启"),node("code","",a.cron||"0 10 10 * * *"));
+      const toggles=node("div","toggles");if(!a.invalid)toggles.append(toggle("已启用","enabled",a),toggle("自动签到","autoCheckIn",a));
+      const buttons=node("div","card-actions"),run=action(a.siteType==="AgentRouter"?"登录并签到":"立即签到","run",a,"run");run.dataset.available=String(!!a.available);
+      buttons.append(run);if(!a.invalid)buttons.append(action("编辑","edit",a));buttons.append(action("删除","delete",a,"danger"));card.append(head,meta,balance,result,schedule,toggles,buttons);cards.append(card);
+    }activeButtons();
+  }
+  async function load(){
+    $("#refresh").disabled=true;
+    try{const data=await api("GET","accounts");accounts=data.accounts||[];const active=(data.jobs||[]).find(j=>["Queued","Running"].includes(j.state));if(!job&&active){job=active;cancelRequested=false;renderJob();schedulePoll()}render()}
+    catch(error){notify(error.message||"读取账号失败",true);if(!accounts.length){const empty=node("div","empty");empty.append(node("strong","","读取账号失败"),node("p","",messageText(error.message||"宿主连接失败")));$("#cards").replaceChildren(empty)}}
+    finally{$("#refresh").disabled=false}
+  }
+  function emptyConfig(){return{label:"",siteType:"NewAPI",baseUrl:"",cookie:"",userId:"",userAgent:"",username:"",password:"",route:"direct",enabled:true,autoCheckIn:false,cron:"0 10 10 * * *",queryBalance:true}}
+  function configOf(account){const value=emptyConfig();for(const key of fields)if(account?.[key]!==undefined)value[key]=account[key];return value}
+  function setVisual(value){for(const key of fields){const field=form.elements.namedItem(key);if(field.type==="checkbox")field.checked=value[key];else field.value=value[key]??""}showProvider()}
+  function visual(){const value={};for(const key of fields){const field=form.elements.namedItem(key);value[key]=field.type==="checkbox"?field.checked:field.value}return value}
+  function parseConfig(text){
+    let value;try{value=JSON.parse(text)}catch{throw Error("JSON 语法错误，请检查引号、逗号和括号")}
+    if(!value||typeof value!=="object"||Array.isArray(value))throw Error("请导入单账号 JSON 对象");
+    const unknown=Object.keys(value).filter(key=>!fields.includes(key));if(unknown.length)throw Error("包含不支持的配置字段："+unknown.join("、"));
+    const merged={...emptyConfig(),...value};if(!names[merged.siteType])throw Error("siteType 只能是 NewAPI、AnyRouter 或 AgentRouter");
+    for(const key of fields){if(typeof merged[key]!==(["enabled","autoCheckIn","queryBalance"].includes(key)?"boolean":"string"))throw Error(key+" 类型不正确")}
+    return merged;
+  }
+  function current(){return mode==="json"?parseConfig($("#jsonText").value):visual()}
+  function showProvider(){
+    const agent=form.elements.siteType.value==="AgentRouter";
+    document.querySelectorAll(".cookie-field").forEach(e=>e.hidden=agent);document.querySelectorAll(".agent-field").forEach(e=>e.hidden=!agent);
+  }
+  function switchMode(next){
+    try{const value=current();setVisual(value);$("#jsonText").value=JSON.stringify(value,null,2);mode=next;$("#visualEditor").hidden=next!=="visual";$("#jsonEditor").hidden=next!=="json";for(const [name,target] of [["visual","visualTab"],["json","jsonTab"]]){$("#"+target).classList.toggle("active",next===name);$("#"+target).setAttribute("aria-pressed",String(next===name))}$("#formError").textContent=""}
+    catch(error){$("#formError").textContent=messageText(error.message)}
+  }
+  function openEditor(account=null){editing=account;mode="visual";form.reset();setVisual(configOf(account));$("#jsonText").value=JSON.stringify(configOf(account),null,2);$("#formError").textContent="";clearPreview();$("#editorTitle").textContent=account?"账号编辑":"添加账号";switchMode("visual");editor.showModal();form.elements.label.focus()}
+  function closeEditor(){if(saving)return;editor.close();form.reset();$("#jsonText").value="";editing=null}
+  function validate(value){
+    if(!value.label.trim())throw Error("请填写账号备注");
+    if(!/^https:\/\//i.test(value.baseUrl.trim()))throw Error("请填写 HTTPS 站点地址");
+    if(!value.cron.trim())throw Error("请填写 Cron 表达式");
+    if(value.siteType==="AgentRouter"){if(!value.username.trim())throw Error("请填写用户名或邮箱");if(!value.password&&!editing?.hasPassword)throw Error("请填写密码")}
+    else{if(!/^[1-9]\d{0,39}$/.test(value.userId))throw Error("User ID 必须是正整数字符串");if(!value.cookie&&!editing?.hasCookie)throw Error("请填写 Cookie")}
+  }
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();if(saving)return;$("#formError").textContent="";
+    try{const value=current();validate(value);saving=true;$("#save").disabled=true;
+      await api("POST","accounts/save",{...value,...(editing?{id:editing.id,version:editing.version}:{}),approveOrigin:form.elements.approveOrigin.checked});
+      saving=false;closeEditor();notify("已保存");await load();
+    }catch(error){$("#formError").textContent=messageText(error.message||"保存失败")}finally{saving=false;$("#save").disabled=false}
+  });
+  form.elements.siteType.addEventListener("change",()=>{const type=form.elements.siteType.value;form.elements.baseUrl.value=defaults[type];for(const key of ["cookie","userId","password","username","userAgent"])form.elements[key].value="";form.elements.approveOrigin.checked=false;showProvider()});
+  form.elements.baseUrl.addEventListener("input",()=>form.elements.approveOrigin.checked=false);
+  let previewRevision=0;
+  function clearPreview(){previewRevision++;$("#cronPreview").textContent=""}
+  form.elements.cron.addEventListener("input",clearPreview);$("#jsonText").addEventListener("input",clearPreview);
+  $("#applyTime").onclick=()=>{const match=/^(\d{2}):(\d{2})$/.exec($("#dailyTime").value);if(!match)return;form.elements.cron.value=`0 ${Number(match[2])} ${Number(match[1])} * * *`;clearPreview()};
+  $("#resetCron").onclick=()=>{form.elements.cron.value="0 10 10 * * *";$("#dailyTime").value="10:10";clearPreview()};
+  $("#previewCron").onclick=async()=>{
+    const revision=++previewRevision;$("#previewCron").disabled=true;
+    try{const data=await api("POST","schedule/preview",{cron:current().cron});if(revision!==previewRevision)return;$("#cronPreview").textContent="UTC+8 · "+data.cron+"\n"+(data.next?.length?data.next.map(at=>new Date(at).toLocaleString("zh-CN",{hour12:false,timeZone:"Asia/Shanghai"})).join("  /  "):data.warning)}
+    catch(error){if(revision===previewRevision)$("#cronPreview").textContent=messageText(error.message||"预览失败")}
+    finally{$("#previewCron").disabled=false}
+  };
+  $("#visualTab").onclick=()=>switchMode("visual");$("#jsonTab").onclick=()=>switchMode("json");
+  $("#add").onclick=()=>openEditor();$("#closeEditor").onclick=closeEditor;$("#discard").onclick=closeEditor;
+  editor.addEventListener("cancel",event=>{event.preventDefault();closeEditor()});
+  $("#importJson").onclick=()=>$("#jsonFile").click();
+  $("#jsonFile").addEventListener("change",async event=>{
+    const file=event.target.files?.[0];if(!file)return;
+    try{if(file.size>65536)throw Error("JSON 文件不能超过 64 KiB");const value=parseConfig(await file.text());setVisual(value);$("#jsonText").value=JSON.stringify(value,null,2);clearPreview();form.elements.approveOrigin.checked=false;$("#formError").textContent="";notify("已导入")}
+    catch(error){$("#formError").textContent=messageText(error.message)}finally{event.target.value=""}
+  });
+  $("#exportJson").onclick=()=>{
+    try{const value=current();
+      const raw=JSON.stringify(value,null,2)+"\n";
+      if(window.top===window){
+        const url=URL.createObjectURL(new Blob([raw],{type:"application/json"})),a=node("a");a.href=url;a.download="js-checkin-account.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      }else{
+        // Router2API 允许弹窗逃离 iframe sandbox，但不允许 iframe 自身下载。
+        // 新窗口内提供用户主动点击的下载链接；内容始终用 textContent/value 设置。
+        const popup=window.open("about:blank","_blank");
+        if(!popup){switchMode("json");$("#jsonText").select();notify("导出窗口被阻止，请允许弹窗",true);return}
+        const doc=popup.document;doc.title="导出账号";
+        doc.body.style.cssText="margin:36px auto;max-width:820px;padding:0 22px;font:14px/1.7 system-ui;background:#f6f7fb;color:#24263e";
+        const heading=doc.createElement("h2");heading.textContent="导出账号";
+        const area=doc.createElement("textarea");area.value=raw;area.readOnly=true;area.style.cssText="box-sizing:border-box;width:100%;height:460px;padding:18px;border:1px solid #d9dce9;border-radius:12px;font:13px/1.8 monospace";
+        const link=doc.createElement("a"),url=popup.URL.createObjectURL(new popup.Blob([raw],{type:"application/json"}));
+        link.href=url;link.download="js-checkin-account.json";link.textContent="下载";link.style.cssText="display:inline-block;margin:12px 0;padding:10px 18px;background:#6858df;color:white;border-radius:10px;text-decoration:none";
+        doc.body.append(heading,link,area);popup.addEventListener("pagehide",()=>popup.URL.revokeObjectURL(url),{once:true});
+      }
+    }catch(error){$("#formError").textContent=messageText(error.message)}
+  };
+  $("#copyJson").onclick=async()=>{
+    try{const value=JSON.stringify(current(),null,2);switchMode("json");$("#jsonText").value=value;$("#jsonText").select();
+      if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(value);notify("已复制");return}catch{}}
+      notify("按 Ctrl+C 复制");
+    }catch(error){$("#formError").textContent=messageText(error.message)}
+  };
+  $("#filters").addEventListener("click",event=>{const button=event.target.closest("[data-type]");if(!button)return;filter=button.dataset.type;for(const b of $("#filters").children){b.classList.toggle("active",b===button);b.setAttribute("aria-pressed",String(b===button))}render()});
+  $("#search").oninput=render;$("#refresh").onclick=load;
+  async function start(ids){
+    if(starting||running())return;
+    let acknowledgeUncertain=false;
+    if(ids?.length===1&&accounts.find(a=>a.id===ids[0])?.lastResult?.status==="Uncertain"){
+      if(!await ask("上次结果不确定，确认重新签到？"))return;acknowledgeUncertain=true;
+    }
+    if(starting||running())return;
+    starting=true;activeButtons();
+    try{job=await api("POST","checkin/start",ids?{ids,acknowledgeUncertain}:{all:true});cancelRequested=false;renderJob();schedulePoll()}
+    catch(error){notify(error.message||"启动失败",true)}finally{starting=false;activeButtons()}
+  }
+  $("#runAll").onclick=()=>start();
+  async function startBalance(account){
+    if(starting||running())return;starting=true;activeButtons();
+    try{job=await api("POST","balance/start",{id:account.id});cancelRequested=false;renderJob();schedulePoll()}
+    catch(error){notify(error.message||"余额查询启动失败",true)}finally{starting=false;activeButtons()}
+  }
+  $("#cards").addEventListener("click",async event=>{
+    const button=event.target.closest("[data-action]");if(!button)return;const account=accounts.find(a=>a.id===button.dataset.id);if(!account)return;
+    if(button.dataset.action==="edit"){openEditor(account);return}
+    if(button.dataset.action==="run"){await start([account.id]);return}
+    if(button.dataset.action==="balance"){await startBalance(account);return}
+    if(button.dataset.action==="delete"&&await ask("删除账号“"+account.label+"”？")){
+      button.disabled=true;try{await api("POST","accounts/delete",{id:account.id,version:account.version});await load();notify("账号已删除")}catch(error){notify(error.message,true);button.disabled=false}
+    }
+  });
+  $("#cards").addEventListener("change",async event=>{
+    const box=event.target.closest("[data-toggle]");if(!box)return;const account=accounts.find(a=>a.id===box.dataset.id);if(!account)return;box.disabled=true;
+    try{await api("POST","accounts/save",{id:account.id,version:account.version,[box.dataset.toggle]:box.checked});await load()}catch(error){box.checked=!box.checked;notify(error.message,true)}finally{box.disabled=false}
+  });
+  function renderJob(){
+    $("#jobPanel").hidden=!job;if(!job)return;const data=job.result||job.progress||{},finished=!running();
+    $("#jobTitle").textContent=(job.name==="js-checkin-balance"?"余额查询 · ":"")+(jobStates[job.state]||job.state);
+    $("#jobSubtitle").textContent=(data.completed??(finished?data.total:0)??0)+" / "+(data.total??"?")+" 个账号"+(job.state==="Failed"&&job.error?" · "+messageText(job.error):"");
+    $("#jobBar").style.width=(data.total?Math.min(100,100*(data.completed??(finished?data.total:0))/data.total):0)+"%";
+    $("#cancelJob").hidden=finished;$("#cancelJob").disabled=cancelRequested;$("#cancelJob").textContent=cancelRequested?"取消中…":"取消任务";
+    const results=$("#jobResults");results.replaceChildren();for(const row of data.results||[])results.append(node("span","badge",row.label+" · "+(job.name==="js-checkin-balance"?messageText(row.message||row.status):(statuses[row.status]||row.status))+(row.warning?" · "+messageText(row.warning):"")));
+    activeButtons();
+  }
+  function schedulePoll(){clearTimeout(pollTimer);if(running())pollTimer=setTimeout(poll,1200)}
+  async function poll(){
+    if(!job||polling)return;polling=true;
+    try{job=await api("GET","jobs/status?id="+encodeURIComponent(job.id));renderJob();if(!running())await load()}
+    catch(error){notify(error.message||"查询失败",true);clearTimeout(pollTimer);return}
+    finally{polling=false}schedulePoll();
+  }
+  $("#pollJob").onclick=poll;
+  $("#cancelJob").onclick=async()=>{
+    if(!job||cancelRequested)return;cancelRequested=true;renderJob();
+    try{const response=await api("POST","jobs/cancel",{id:job.id});if(!response.accepted){cancelRequested=false;notify("取消未接受",true)}await poll()}
+    catch(error){cancelRequested=false;renderJob();notify(error.message,true)}
+  };
+  window.addEventListener("pagehide",()=>{clearTimeout(pollTimer);clearTimeout(toastTimer);form.reset();$("#jsonText").value=""});
+  if(window.Router2API)load();else{$("#cards").replaceChildren(node("div","empty","未连接 Router2API"));$("#add").disabled=true;$("#runAll").disabled=true}
+})();
+</script>
+</body>
+</html>
