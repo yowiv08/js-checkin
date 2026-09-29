@@ -1,4 +1,3 @@
-/** 分钟精度 Cron，固定 UTC+8。纯计算，不创建计时器。 */
 export const DEFAULT_CRON = "0 10 10 * * *";
 const OFFSET = 8 * 3600000;
 export function parseCron(value = DEFAULT_CRON) {
@@ -27,14 +26,12 @@ function dateMatches(parsed, date) {
   const [, , days, months, weekdays] = parsed.sets;
   if (!months.includes(date.getUTCMonth() + 1)) return false;
   const dom = days.includes(date.getUTCDate()), dow = weekdays.includes(date.getUTCDay());
-  // 与传统 Unix Cron 一致：日期与星期均受限时取 OR。
   return parsed.domAny ? dow : parsed.dowAny ? dom : dom || dow;
 }
 export function cronMatches(value, now = Date.now()) {
   const parsed = typeof value === "string" ? parseCron(value) : value, date = new Date(now + OFFSET);
   return dateMatches(parsed, date) && parsed.sets[0].includes(date.getUTCMinutes()) && parsed.sets[1].includes(date.getUTCHours());
 }
-/** 跳过不匹配的日/小时，而非逐分钟遍历；最多扫描 5 年，覆盖闰年。 */
 export function nextRuns(value, now = Date.now(), count = 3) {
   const parsed = parseCron(value), result = [], local = new Date(now + OFFSET);
   const midnight = Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate());

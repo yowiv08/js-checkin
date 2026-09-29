@@ -1,7 +1,3 @@
-/**
- * 可选的真实 Chromium UI 冒烟/截图，仅用离线演示账号和模拟管理桥。
- * 不连接 Router2API 或上游。CHROME_PATH 可指定 Chrome/Edge；不会安装浏览器。
- */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -40,7 +36,7 @@ const rows=[
     enabled:false,available:false,autoCheckIn:false,cookie:"",username:"demo2@example.test",password:"DEMO_ONLY",hasCookie:false,hasPassword:true}
 ].map(row=>({...defaults,...row}));
 const mock=`<script>window.Router2API={request:async(method,route,body)=>{if(route==="accounts")return{accounts:${JSON.stringify(rows)},jobs:[]};if(route==="schedule/preview")return{cron:body.cron,next:["2026-10-01T01:30:00Z"]};throw Error("离线演示不会执行签到")}};</script>`;
-const html=(await fs.readFile(path.join(root,"ui/index.html"),"utf8")).replace("</head>",mock+"</head>").replace(">v1.1.1<",">演示数据 · v1.1.1<");
+const html=(await fs.readFile(path.join(root,"ui/index.html"),"utf8")).replace("</head>",mock+"</head>").replace(">v0.1.0<",">演示数据 · v0.1.0<");
 await fs.writeFile(path.join(out,"index.html"),html);
 await fs.writeFile(path.join(out,"sandbox.html"),`<!doctype html><meta charset="utf-8"><title>宿主沙箱离线测试</title>
 <iframe id="host" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>
@@ -105,7 +101,6 @@ try{
   await noOverflow();await screenshot("mobile");
   await evaluate("document.querySelector('[data-action=\"edit\"]').click()");
   await noOverflow();await screenshot("mobile-editor");
-  // 与宿主相同的 opaque-origin iframe：无 allow-modals/allow-downloads。
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await send("Page.navigate",{url:pathToFileURL(path.join(out,"sandbox.html")).href});
   let frame,frameTarget;
@@ -153,6 +148,5 @@ try{
   console.log(out);
 }finally{
   socket?.close();
-  // 只终止本脚本创建的进程；不触碰用户已打开的浏览器。
   if(child.exitCode===null){await new Promise(resolve=>setTimeout(resolve,300));if(child.exitCode===null)child.kill()}
 }

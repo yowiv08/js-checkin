@@ -1,4 +1,3 @@
-/** 账号管理和 CAS 持久化；只使用本插件平台，不读取其他插件的账号。 */
 import {
   InputError, input, text, id, configFrom, decode, identity, resultData,
   enabled, baseUrl, acquire, release, accountLock, cancelled
@@ -37,7 +36,6 @@ export async function listAccounts(ctx) {
         invalid: true, available: false, error: "账号配置损坏，可删除后重新添加" };
     }
   });
-  // job 只用于恢复当前版本的任务面板；历史仍由宿主任务日志负责。
   return ctx.json(200, { accounts: rows, jobs: await ctx.jobs.list(), schedule: "每账号自定义 Cron · 默认每日 10:10（UTC+8）" });
 }
 /** @param {import("./common.mjs").Context} ctx */
@@ -90,7 +88,6 @@ function objectBalance(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     && ["Fresh","Stale","Unknown"].includes(value.state);
 }
-/** 余额写入独立于签到结果；合并当前凭据，绝不为了 CAS 冲突重发请求。 */
 /** @param {import("./common.mjs").Context} ctx */
 export async function persistBalance(ctx, record, update) {
   for (let i = 0; i < 3; i++) {
@@ -112,7 +109,6 @@ export async function deleteAccount(ctx) {
   const lock = await acquire(ctx, accountLock(ctx, accountId));
   if (!lock) throw new InputError(409, "账号正在执行或编辑，暂不能删除");
   try {
-    // 删除不依赖坏配置可被解码；归属和版本仍必须校验。
     const account = await ctx.accounts.get(accountId);
     if (!account || account.platform !== ctx.platform) throw new InputError(404, "账号不存在或不属于当前插件");
     if (body.version !== account.credentialVersion) throw new InputError(409, "账号已变化，请刷新后再删除");
@@ -120,7 +116,6 @@ export async function deleteAccount(ctx) {
     return ctx.json(200, { deleted: true });
   } finally { await release(ctx, lock); }
 }
-/** 仅 CAS 重试保存，不重放网络；防止异步旧结果覆盖新身份或新一次执行。 */
 /** @param {import("./common.mjs").Context} ctx */
 export async function persist(ctx, record, result, successDay = null, expectedAttempt = null) {
   for (let tries = 0; tries < 3; tries++) {

@@ -1,6 +1,6 @@
 {
   "name": "router2api-js-checkin",
-  "version": "1.1.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Router2API 签到管理：New API、AnyRouter 与 AgentRouter",

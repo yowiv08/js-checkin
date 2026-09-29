@@ -1,7 +1,4 @@
-/**
- * 纯 ECMAScript 公共边界；生产只使用宿主 ctx，不依赖 Node/DOM/fetch。
- * @typedef {import("../sdk/index").PluginContext} Context
- */
+/** @typedef {import("../sdk/index").PluginContext} Context */
 import { DEFAULT_CRON, parseCron } from "./cron.mjs";
 export class InputError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -17,7 +14,6 @@ export const object = value => value !== null && typeof value === "object" && !A
 export const cancelled = error => error?.code === "host.cancelled" || error?.name === "AbortError";
 export const day = (now = Date.now()) => new Date(now + 8 * 3600000).toISOString().slice(0, 10);
 
-/** 错误消息由插件生成；配置可完整查看，但错误路径不额外回传上游文本或宿主异常。 */
 export function errorMessage(error) {
   if (error instanceof InputError) return error.message;
   if (error?.code === "host.proxy_pool_unavailable") return "代理池无可用节点，未回退直连";
@@ -50,7 +46,6 @@ export function flag(value, name, fallback) {
   if (typeof value !== "boolean") throw new InputError(400, `${name} 必须是布尔值`);
   return value;
 }
-/** 保留子路径，拒绝可被 URL 规范化隐藏的凭据、穿越、查询和编码分隔符。 */
 /** @param {Context} ctx */
 export function baseUrl(ctx, value) {
   const raw = text(value, "HTTPS 站点地址", 1024, true).trim();
@@ -61,7 +56,6 @@ export function baseUrl(ctx, value) {
   if (parsed.scheme !== "https" || parsed.query || parsed.fragment) throw new InputError(400, "HTTPS 地址无效");
   return { url: parsed.href.replace(/\/+$/, ""), origin: parsed.origin };
 }
-/** 空秘密仅在未改变站点/身份时保留；不接受凭据在类型间隐式迁移。 */
 /** @param {Context} ctx */
 export function configFrom(ctx, body, previous = undefined) {
   const siteType = body.siteType ?? previous?.siteType ?? "NewAPI";
@@ -99,7 +93,6 @@ export function configFrom(ctx, body, previous = undefined) {
   }
   return config;
 }
-/** 包括认证秘密与部署子路径；秘密只用于摘要比较，不回传摘要给页面。 */
 /** @param {Context} ctx */
 export function identity(ctx, config) {
   return ctx.crypto.sha256(JSON.stringify([
@@ -117,7 +110,6 @@ export function resultData(fields) {
   try {
     const value = JSON.parse(fields.lastResult || "null");
     if (!object(value) || !Object.hasOwn(STATUS_LABELS, value.status)) return null;
-    // 白名单投影，不信任凭据内的任意附加字段。
     return {
       status: value.status, message: typeof value.message === "string" ? value.message.slice(0, 240) : STATUS_LABELS[value.status],
       startedAt: value.startedAt ?? null, finishedAt: value.finishedAt ?? null,
@@ -128,7 +120,6 @@ export function resultData(fields) {
 }
 export const enabled = record => record.config.enabled && record.account.status?.state === "Active";
 
-/** 账号锁只保存随机所有者；释放时 CAS，不能删除已被别的调用重新取得的锁。 */
 /** @param {Context} ctx */
 export async function acquire(ctx, key, ttlSeconds = 180) {
   const store = ctx.state.shared;
@@ -146,7 +137,7 @@ export async function renew(ctx, lock) {
 export async function release(ctx, lock) {
   if (!lock) return;
   try { await ctx.state.shared.compareExchange(lock.key, lock.owner, undefined); }
-  catch { /* 取消后宿主拒绝 I/O 时依靠有限 TTL；不会无条件删除别人的锁。 */ }
+  catch {  }
 }
 /** @param {Context} ctx */
 export const accountLock = (ctx, accountId) => "account:" + ctx.crypto.sha256(accountId);

@@ -1,10 +1,8 @@
 import { InputError, decode, enabled, day, resultData } from "./common.mjs";
 import { cronMatches } from "./cron.mjs";
-/** 不把凭据或可复用客户端放进 job；摘要用于识别排队期间的配置变化。 */
 /** @param {import("./common.mjs").Context} ctx */
 export const scheduleStamp = (ctx, config) => ctx.crypto.sha256(JSON.stringify(config));
 
-/** 分钟 ticker 只入队，不在 Cron invocation 内等待签到。 */
 /** @param {import("./common.mjs").Context} ctx */
 export async function enqueueDue(ctx) {
   const slot = Math.floor(Date.now()/60000)*60000, due = [];
@@ -21,7 +19,6 @@ export async function enqueueDue(ctx) {
   for (let start = 0; start < due.length; start += 100) {
     const items = [];
     for (const item of due.slice(start,start+100)) {
-      // 发送前领取 slot。崩溃/入队失败可能漏执行，绝不声称跨故障恰好一次。
       const key = `cron:${slot}:${ctx.crypto.sha256(item.id)}`;
       if (await ctx.state.shared.putIfAbsent(key,ctx.crypto.randomUUID(),{ttlSeconds:172800})) items.push(item);
     }

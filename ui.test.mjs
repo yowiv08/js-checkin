@@ -1,4 +1,3 @@
-/** jsdom 离线 DOM 交互测试，模拟管理员桥，不访问站点，不等同于真实浏览器/宿主验收。 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";

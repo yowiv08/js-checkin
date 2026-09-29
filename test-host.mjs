@@ -1,4 +1,3 @@
-/** Node 离线模拟器；不运行 .NET/Jint/SQLite，不向真实站点发送请求。 */
 import { createHash, randomUUID } from "node:crypto";
 import { DEFAULTS } from "./src/common.mjs";
 import { DEFAULT_CRON } from "./src/cron.mjs";
@@ -17,7 +16,7 @@ export function fixture() {
   f.seed = (siteType = "NewAPI", overrides = {}, accountId = `account-${++nextId}`) => {
     const config = {
       siteType, baseUrl: DEFAULTS[siteType] || "https://new.example", enabled: true, autoCheckIn: true,
-      cron: DEFAULT_CRON, queryBalance: false, // 原有签到单元测试关闭可选 GET；余额套件显式开启。
+      cron: DEFAULT_CRON, queryBalance: false,
       route: "direct", userAgent: "", cookie: siteType === "AgentRouter" ? "" : "session=COOKIE_SECRET",
       userId: siteType === "AgentRouter" ? "" : "90071992547409931234",
       username: siteType === "AgentRouter" ? "ethan@example.test" : "", password: siteType === "AgentRouter" ? "PASSWORD_SECRET" : "",
@@ -98,7 +97,6 @@ export function fixture() {
 export function response(json, statusCode = 200) {
   return { statusCode, headers: {}, bodyText: typeof json === "string" ? json : JSON.stringify(json) };
 }
-// 测试专用定点整数实现，不用 JS Number 模拟金额；不声称等同于 .NET decimal 舍入。
 const SCALE=10n**28n;
 const fixed=value=>{if(!/^-?\d+(?:\.\d{1,28})?$/.test(value))throw Error("decimal");const neg=value.startsWith("-"),[a,b=""]=value.replace(/^-/,"").split(".");return(neg?-1n:1n)*(BigInt(a)*SCALE+BigInt(b.padEnd(28,"0")))};
 const formatted=value=>{const neg=value<0n;if(neg)value=-value;const fraction=(value%SCALE).toString().padStart(28,"0").replace(/0+$/,"");return(neg?"-":"")+(value/SCALE).toString()+(fraction?"."+fraction:"")};

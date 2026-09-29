@@ -42,7 +42,7 @@
 </head>
 <body>
 <main class="app">
-  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v1.1.1</span></header>
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.1.0</span></header>
   <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询</p></div><div class="schedule"><small><span class="live"></span>默认签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
   <section class="stats" aria-label="账号概况">
     <div class="stat"><div><span class="stat-label">全部账号</span><strong id="statTotal">0</strong></div><span class="stat-icon">▦</span></div>
@@ -108,11 +108,9 @@
   const today = () => new Date(Date.now()+8*3600000).toISOString().slice(0,10);
   const time = value => value ? new Date(value).toLocaleString("zh-CN",{hour12:false}) : "尚未执行";
   const api = (method,route,body) => window.Router2API.request(method,route,body);
-  // 仅处理系统反馈；账号名称、Cookie、密码和 JSON 内容始终原样保留。
   const messageText = value => String(value??"").replace(/\([^()]*\)|（[^（）]*）/g,"").split(/[；。]/,1)[0].trim();
   function node(tag,cls,text){const item=document.createElement(tag);if(cls)item.className=cls;if(text!==undefined)item.textContent=text;return item}
   function notify(message,bad=false){const toast=$("#toast");toast.textContent=messageText(message);toast.className="toast"+(bad?" bad":"");toast.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.hidden=true,6000)}
-  // 宿主 iframe 不授予 allow-modals：不能使用 window.confirm/alert/prompt。
   function ask(message){
     if(confirmationResolve)return Promise.resolve(false);
     $("#confirmationText").textContent=message;$("#confirmation").showModal();$("#rejectConfirm").focus();
@@ -222,8 +220,6 @@
       if(window.top===window){
         const url=URL.createObjectURL(new Blob([raw],{type:"application/json"})),a=node("a");a.href=url;a.download="js-checkin-account.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       }else{
-        // Router2API 允许弹窗逃离 iframe sandbox，但不允许 iframe 自身下载。
-        // 新窗口内提供用户主动点击的下载链接；内容始终用 textContent/value 设置。
         const popup=window.open("about:blank","_blank");
         if(!popup){switchMode("json");$("#jsonText").select();notify("导出窗口被阻止，请允许弹窗",true);return}
         const doc=popup.document;doc.title="导出账号";

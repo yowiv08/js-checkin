@@ -1,7 +1,3 @@
-/**
- * Cron/job 共用执行器。先持久化 Uncertain 再 POST：宿主取消后不能再写库，
- * 仍可保留未确认记录，避免下一次任务盲目重放。没有后台线程或跨调用句柄。
- */
 import {
   InputError, day, enabled, resultData, acquire, renew, release, accountLock,
   cancelled, errorMessage
@@ -24,11 +20,10 @@ export async function writeLog(ctx, result, taskName) {
     return true;
   } catch (error) {
     if (cancelled(error)) throw error;
-    return false; // 日志失败不会触发第二次 POST。
+    return false;
   }
 }
 
-/** 同 origin 串行且前次结束后至少等 60 秒；预写 90 秒保守间隔覆盖取消/超时。 */
 /** @param {import("./common.mjs").Context} ctx */
 async function waitForAgent(ctx, config, accountLease) {
   const hash = ctx.crypto.sha256(ctx.url.parse(config.baseUrl).origin);
@@ -62,7 +57,6 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     startedAt, finishedAt: new Date().toISOString(), httpStatus: null, warning: null, ...extra
   });
   try {
-    // 先校验归属，避免外来账号 ID 获得本插件的执行身份。
     record = await readAccount(ctx, accountId);
     if (!enabled(record) || automatic && !record.config.autoCheckIn)
       return finish("Skipped", "账号已停用或未开启自动签到");
@@ -86,7 +80,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
       if (!gate) return finish("Skipped", "同站点已有登录任务，未并发发送");
     }
     client = await ctx.http.createClient({route:record.config.route,allowDirectFallback:false});
-    await ctx.delay(0); // 发送前显式观察宿主取消。
+    await ctx.delay(0);
     await renew(ctx, lease);
     if (gate) await renew(ctx, gate);
     outcome = finish("Uncertain", "请求已准备发送，尚未确认结果；中断后请先到站点核实");
@@ -99,7 +93,6 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     const {route, ...spec} = requestFor(record.config);
     const response = await client.request(spec);
     const interpreted = interpret(record.config.siteType, response);
-    // 跨 UTC+8 零点的请求可能属于任一日，不推断成功日期，防止错误抑制次日签到。
     outcome = finish(interpreted.status, interpreted.message, { httpStatus: interpreted.httpStatus });
     const sameDay = day(Date.parse(startedAt)) === day();
     try {
@@ -110,7 +103,6 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
       if (cancelled(error)) throw error;
       outcome.warning = "上游结果已返回，但本地记录未更新；保留未确认状态，不重发请求";
     }
-    // 先保存签到，再查余额；余额故障不能把确认成功改写成不确定或引发重签。
     if (record.config.queryBalance && !outcome.warning && (
       ["Success","Already"].includes(outcome.status) ||
       record.config.siteType === "AgentRouter" && outcome.status === "Uncertain"
@@ -128,7 +120,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     }
     return outcome;
   } catch (error) {
-    if (cancelled(error)) throw error; // 预写记录保留不确定，不能把取消吞成 job Completed。
+    if (cancelled(error)) throw error;
     const definitelyNotSent = ["host.denied", "host.proxy_pool_unavailable"].includes(error?.code);
     outcome = finish(dispatched && !definitelyNotSent ? "Uncertain" : "Failed",
       dispatched && !definitelyNotSent ? "请求发生传输或读取错误，无法确认 POST 是否生效，未重试" : errorMessage(error));
@@ -141,17 +133,16 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     }
     return outcome;
   } finally {
-    if (client) { try { await client.close(); } catch { /* invocation 结束由宿主兜底回收。 */ } }
+    if (client) { try { await client.close(); } catch {  } }
     if (gate && dispatched) {
       try { await ctx.state.shared.set(gate.nextKey, Date.now() + 60000, { ttlSeconds: 240 }); }
-      catch { /* 取消时保留发送前预写的保守间隔。 */ }
+      catch {  }
     }
     await release(ctx, gate);
     await release(ctx, lease);
   }
 }
 
-/** 手动余额刷新仅用于 Cookie 账号，不允许隐含 AgentRouter 登录。 */
 /** @param {import("./common.mjs").Context} ctx */
 export async function refreshBalance(ctx, accountId) {
   const record = await readAccount(ctx,accountId);
@@ -178,7 +169,7 @@ export async function refreshBalance(ctx, accountId) {
     return {total:1,completed:1,results:[{accountId,label:current.account.label,
       status:balance.error ? "Failed" : "Success",message:balance.error || "余额已更新；未执行签到"}]};
   } finally {
-    if (client) { try { await client.close(); } catch { /* 仅回收句柄。 */ } }
+    if (client) { try { await client.close(); } catch {  } }
     await release(ctx,lease);
   }
 }

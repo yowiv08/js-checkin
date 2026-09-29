@@ -1,4 +1,3 @@
-/** 清单公开入口；控制面函数由管理员会话/CSRF 保护，所有业务均为签到。 */
 import { endpoint, input, id, text, InputError, decode, flag } from "./common.mjs";
 import * as accounts from "./accounts.mjs";
 import { runBatch, refreshBalance } from "./runner.mjs";

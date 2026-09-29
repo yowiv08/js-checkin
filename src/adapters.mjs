@@ -1,12 +1,7 @@
-/**
- * 独立实现公开协议，不执行参考项目的代码/远端挑战脚本。
- * AnyRouter/New API 不登录；AgentRouter 不访问 sign_in（余额模块可复用登录会话 GET self）。
- */
 /** @returns {import("../sdk/index").HttpRequest & { responseType: "text" }} */
 export function requestFor(config) {
   const agent = config.siteType === "AgentRouter";
   const path = agent ? "/api/user/login" : config.siteType === "AnyRouter" ? "/api/user/sign_in" : "/api/user/checkin";
-  // baseUrl 已经通过 ctx.url 规范化；此处只提取经过校验的 origin。
   const origin = config.baseUrl.split("/").slice(0, 3).join("/");
   const headers = { accept: "application/json", origin, referer: config.baseUrl + (agent ? "/login" : "/") };
   if (!agent) {
@@ -20,7 +15,6 @@ export function requestFor(config) {
     ...(agent ? { body: { username: config.username, password: config.password } } : {})
   };
 }
-/** 只返回固定消息，不把可能反射 Cookie/密码的上游 message 或 data 返回到页面。 */
 export function interpret(siteType, response) {
   const httpStatus = response.statusCode;
   const result = (status, message) => ({ status, message, httpStatus });

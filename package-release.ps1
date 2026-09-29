@@ -1,8 +1,4 @@
 #requires -Version 7
-<#
-生成 Router2API GitHub Release 资产；独立项目入口，不扫描其他插件或开发文件。
-索引字段与 contentSha256 算法遵循 Router2API 的 PLUGIN-RELEASES.md。
-#>
 param(
     [string]$Tag,
     [string]$InputDirectory = (Join-Path $PSScriptRoot 'dist/js-checkin'),
@@ -29,7 +25,7 @@ function Test-Inside([string]$Parent, [string]$Child) {
 }
 
 if ($Tag -and $Tag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-    throw 'Tag 必须使用 v1.2.3 格式。'
+    throw 'Tag 必须使用 v0.1.0 格式。'
 }
 $inputPath = [IO.Path]::GetFullPath($InputDirectory)
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
@@ -44,7 +40,6 @@ if ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) {
     throw '插件目录不能是符号链接。'
 }
 
-# 显式白名单保证开发数据、账号文件、旧资产和隐藏文件不能进入 ZIP。
 $expectedFiles = @('plugin.json', 'server/plugin.mjs', 'ui/index.html')
 $files = @{}
 $directories = @('server', 'ui')
@@ -79,7 +74,6 @@ if ($manifest.version -isnot [string] -or $manifest.version -cnotmatch '^[0-9]+\
 }
 if (-not $Tag) { $Tag = "v$($manifest.version)" }
 
-# 不清空旧目录，不覆盖已生成资产；调用者可显式指定新的 OutputDirectory。
 if (Test-Path -LiteralPath $outputPath) {
     $existing = Get-Item -LiteralPath $outputPath -Force
     if (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -90,7 +84,6 @@ if (Test-Path -LiteralPath $outputPath) {
     }
 }
 
-# 顺序为包内相对路径的字典序；以 LF 分隔，不含结尾换行。
 $fileHashes = @{}
 $content = @($expectedFiles | ForEach-Object {
     $fileHashes[$_] = Get-Sha256 $files[$_].FullName
@@ -102,7 +95,6 @@ $archive = Join-Path $outputPath $asset
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 Compress-Archive -LiteralPath $inputPath -DestinationPath $archive
 
-# 验证实际 ZIP 的顶层目录和内容，不只验证打包前的文件列表。
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($archive)
 try {

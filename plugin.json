@@ -3,7 +3,7 @@
   "id": "js-checkin",
   "name": "中转站签到",
   "description": "New API、AnyRouter、AgentRouter 签到管理，支持余额查询、自定义 Cron、可视化与 JSON 配置。",
-  "version": "1.1.1",
+  "version": "0.1.0",
   "runtime": "jint",
   "hostApi": "1",
   "format": "esm-bundle",
