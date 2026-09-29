@@ -3,10 +3,10 @@ import { DEFAULTS } from "./src/common.mjs";
 import { DEFAULT_CRON } from "./src/cron.mjs";
 const clone = value => structuredClone(value);
 export const cancellation = () => Object.assign(new Error("cancelled"), { code: "host.cancelled" });
-export function fixture() {
+export function fixture({ rawHttp = false } = {}) {
   const db = new Map(), state = new Map(), origins = new Set(), calls = [], logs = [], jobs = new Map(), progress = [], waits = [];
   let nextId = 0;
-  const f = { db, state, origins, calls, logs, jobs, progress, waits, clients: [], available: true, aborted: false,
+  const f = { db, state, origins, calls, logs, jobs, progress, waits, requests: [], probes: [], clients: [], available: true, aborted: false,
     handler: async () => response({ success: true, message: "签到成功" }), casHook: null, failLog: false, stateFail: false };
   const check = () => { if (f.aborted) throw cancellation(); };
   const metadata = (row, secrets = false) => ({
@@ -77,7 +77,15 @@ export function fixture() {
         },
         approvedOrigins: async () => {check();return [...origins]},
         approveOrigin: async origin => {check();if(ctx.phase!=="Control")throw Error("admin only");origins.add(origin)},
-        request: async spec => {check();if(!origins.has(new URL(spec.url).origin))throw Object.assign(Error("denied"),{code:"host.denied"});calls.push(clone(spec));return f.handler(spec,ctx)}
+        request: async spec => {
+          check();if(!origins.has(new URL(spec.url).origin))throw Object.assign(Error("denied"),{code:"host.denied"});
+          f.requests.push(clone(spec));
+          if(spec.method==="GET"&&spec.url.endsWith("/api/user/self")&&!spec.headers?.["new-api-user"]){
+            f.probes.push(clone(spec));
+            if(!rawHttp)return response({success:false,message:"未登录"},401);
+          }
+          calls.push(clone(spec));return f.handler(spec,ctx);
+        }
       },
       tasks: { writeLog: async value => {check();if(f.failLog)throw Error("log unavailable");logs.push(clone(value))} },
       jobs: {

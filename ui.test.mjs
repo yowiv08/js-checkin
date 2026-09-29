@@ -150,7 +150,7 @@ test("Cron 编辑期间过期的预览响应不会覆盖提示",async t=>{
 });
 test("余额 job 完成只显示余额结果，不冒充签到成功",async t=>{
   const p=await page(t,[account()],async(_,route)=>{
-    if(route==="balance/start")return{id:"b",name:"js-checkin-balance",state:"Completed",result:{completed:1,total:1,results:[{label:"账号",status:"Success",message:"余额已更新；未执行签到"}]}};
+    if(route==="balance/start")return{id:"b",name:"js-checkin-balance",state:"Completed",result:{completed:1,total:1,results:[{label:"账号",status:"Success",message:"余额已更新"}]}};
   });
   p.click('[data-action="balance"]');await until(()=>!p.$("#jobPanel").hidden);
   assert.match(p.$("#jobResults").textContent,/余额已更新/);assert.doesNotMatch(p.$("#jobResults").textContent,/签到成功/);
@@ -171,12 +171,12 @@ test("页面仅保留功能文案，账号编辑与 JSON 均没有附注提示",
   }
   p.click("#exportJson");assert.equal(p.$("#confirmation").open,false);
 });
-test("只清理系统反馈附注，不修改用户名称和凭据中的括号",async t=>{
+test("响应、用户名称和凭据中的括号原样展示",async t=>{
   const name="个人账号（备用）",password="P(test)（SECRET）";
   const p=await page(t,[account({label:name,siteType:"AgentRouter",username:"ethan",password,hasPassword:true,
     lastResult:{status:"Failed",message:"上游拒绝请求（HTTP 403）；未重试"}})]);
   assert.equal(p.$(".card-name").textContent,name);
-  assert.equal(p.$(".result-msg").textContent,"上游拒绝请求");
+  assert.equal(p.$(".result-msg").textContent,"上游拒绝请求（HTTP 403）；未重试");
   p.click('[data-action="edit"]');assert.equal(p.$('[name="password"]').value,password);
   p.click("#jsonTab");const json=JSON.parse(p.$("#jsonText").value);assert.equal(json.password,password);assert.equal(json.label,name);
   p.click("#visualTab");assert.equal(p.$('[name="password"]').value,password);
@@ -187,4 +187,22 @@ test("保存成功和复制只显示操作结果",async t=>{
   assert.equal(p.$("#toast").textContent,"按 Ctrl+C 复制");
   p.event(p.$("#accountForm"),"submit");await until(()=>!p.$("#editor").open);
   assert.equal(p.$("#toast").textContent,"已保存");
+});
+test("账号与任务响应正文作为文本显示，不执行 HTML，保留括号和换行",async t=>{
+  const raw='<html>\n<script>window.REMOTE_EXECUTED=true</script>错误（403）；(details)\n</html>';
+  const p=await page(t,[account({lastResult:{status:"Failed",httpStatus:403,message:raw}})],async(_,route)=>{
+    if(route==="checkin/start")return{id:"raw",name:"js-checkin-run",state:"Completed",result:{total:1,results:[{label:"账号",status:"Failed",httpStatus:403,message:raw}]}};
+  });
+  assert.equal(p.$(".result-msg").textContent,raw);
+  assert.match(p.$(".result").textContent,/HTTP 403/);
+  assert.equal(p.$(".result script"),null);assert.equal(p.dom.window.REMOTE_EXECUTED,undefined);
+  p.click('[data-action="run"]');await until(()=>!p.$("#jobPanel").hidden);
+  assert.equal(p.$("#jobResults .result-msg").textContent,raw);
+  assert.equal(p.$("#jobResults script"),null);assert.equal(p.dom.window.REMOTE_EXECUTED,undefined);
+});
+test("成功响应同样展示正文",async t=>{
+  const raw='{"message":"签到成功","success":true}';
+  const p=await page(t,[account({lastResult:{status:"Success",httpStatus:200,message:raw}})]);
+  assert.equal(p.$(".result-msg").textContent,raw);
+  assert.match(p.$(".result").textContent,/HTTP 200/);
 });

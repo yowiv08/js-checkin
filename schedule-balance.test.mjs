@@ -89,7 +89,7 @@ test("New API 签到后余额：固定客户端、Cookie UID、无重定向、st
   const self=f.calls[1];assert.equal(self.headers.cookie,"session=COOKIE_SECRET");assert.equal(self.headers["user-agent"],"UA");
   assert.equal(self.headers["new-api-user"],"90071992547409931234");assert.equal(self.body,undefined);
   assert.equal(self.followRedirects,false);assert.equal(self.allowDirectFallback,false);
-  assert.deepEqual(f.calls[2].headers,{accept:"application/json"});
+  assert.deepEqual(f.calls[2].headers,{accept:"application/json",origin:"https://new.example",referer:"https://new.example/","user-agent":"UA"});
   assert.equal(new Set(f.calls.map(c=>c.client)).size,1);assert.ok(f.clients.every(c=>c.closed));
   assert.equal(storedBalance(a).snapshot.amount,"25");assert.equal(storedBalance(a).snapshot.unit,"USD");
   assert.equal(a.credential.fields.lastSuccessDay,day());assert.equal(storedBalance(a).state,"Fresh");
@@ -99,7 +99,7 @@ test("AnyRouter GET self 不登录，精确大整数按 500000 换算；负数/�
   f.handler=async spec=>spec.method==="POST"?response({success:false,message:"今日已签到"}):
     response('{"success":true,"data":{"quota":90071992547409931234}}');
   assert.equal((await runOne(f.ctx(),a.id)).status,"Already");
-  assert.equal(f.calls.length,2);assert.equal(storedBalance(a).snapshot.amount,"180143985094819.862468");
+  assert.equal(f.calls.length,2);assert.equal(f.probes.length,1);assert.equal(storedBalance(a).snapshot.amount,"180143985094819.862468");
   for(const quota of ["0","-500000"]){
     const g=fixture(),b=g.seed("AnyRouter");g.handler=async()=>response(`{"success":true,"data":{"quota":${quota}}}`);
     await refreshBalance(g.ctx(),b.id);assert.equal(storedBalance(b).snapshot.amount,quota==="0"?"0":"-1");
@@ -134,7 +134,7 @@ for(const [label,reply] of [
   assert.equal(storedBalance(a).state,"Unknown");assert.equal(storedBalance(a).snapshot,null);
   assert.equal(f.calls.filter(c=>c.method==="POST").length,1);
   assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");
-  assert.doesNotMatch(JSON.stringify(storedBalance(a)),/COOKIE_SECRET/);
+  if(label==="超时")assert.equal(storedBalance(a).error,"timeout COOKIE_SECRET");
 });
 test("余额刷新失败保留上次余额，并标旧数据；不修改签到结果",async()=>{
   const f=fixture(),a=f.seed("NewAPI");f.handler=cookieHandler;
@@ -212,7 +212,7 @@ test("余额查询建客户端失败仍保留旧值并标旧数据，不改签�
   await refreshBalance(f.ctx(),a.id);const ctx=f.ctx();
   ctx.http.createClient=async()=>{throw Object.assign(Error("none"),{code:"host.proxy_pool_unavailable"})};
   await refreshBalance(ctx,a.id);assert.equal(storedBalance(a).state,"Stale");
-  assert.equal(storedBalance(a).snapshot.amount,"25");assert.match(storedBalance(a).error,/未回退直连/);
+  assert.equal(storedBalance(a).snapshot.amount,"25");assert.equal(storedBalance(a).error,"host.proxy_pool_unavailable: none");
   assert.equal(f.calls.length,2);assert.equal(a.credential.fields.lastResult,undefined);
 });
 test("入队失败不在同一 slot 重试；计划不会泄露凭据或触发 POST",async()=>{

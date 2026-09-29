@@ -1,5 +1,7 @@
-import { InputError, cancelled } from "./common.mjs";
+import { InputError, cancelled, errorMessage } from "./common.mjs";
 import { interpret, requestFor } from "./adapters.mjs";
+import { wafHeaders } from "./waf.mjs";
+import { responseMessage } from "./diagnostics.mjs";
 
 export function exactJson(raw) {
   if (typeof raw !== "string" || raw.length > 1024 * 1024) throw new InputError(502,"上游 JSON 过大或缺失");
@@ -14,8 +16,7 @@ function business(response) {
   try { json = exactJson(response.bodyText); } catch {  }
   if (response.statusCode >= 200 && response.statusCode < 300 && json?.success === true && json.data && !Array.isArray(json.data) && typeof json.data === "object") return json.data;
   const result = interpret("NewAPI",response);
-  throw new InputError(502, ["AuthExpired","Challenge","RateLimited"].includes(result.status)
-    ? result.message : "余额接口未返回明确成功的 JSON 数据");
+  throw new InputError(502, responseMessage(response) || result.message);
 }
 export function agentSession(config, loginResponse) {
   const data = business(loginResponse), uid = data.id;
@@ -49,7 +50,9 @@ export function agentSession(config, loginResponse) {
 function getSpec(config, path, session) {
   const { route, body, ...spec } = requestFor(config);
   return { ...spec, method: "GET", url: config.baseUrl + path,
-    headers: session ? { ...spec.headers, cookie:session.cookie,"new-api-user":session.userId } : {accept:"application/json"} };
+    headers: wafHeaders(config, session
+      ? { ...spec.headers, cookie:session.cookie,"new-api-user":session.userId }
+      : {accept:"application/json",origin:spec.headers.origin,referer:config.baseUrl+"/"}) };
 }
 /** @param {import("./common.mjs").Context} ctx
  * @param {import("../sdk/index").HttpClientHandle} client */
@@ -57,8 +60,9 @@ export async function readBalance(ctx, config, client, loginResponse = null) {
   const checkedAt = new Date().toISOString();
   try {
     const session = config.siteType === "AgentRouter" ? agentSession(config,loginResponse) : config;
-    const data = business(await client.request(getSpec(config,"/api/user/self",session)));
-    if (!integer(data.quota)) throw new InputError(502,"余额缺少有效 quota，未将未知余额当作零");
+    const response = await client.request(getSpec(config,"/api/user/self",session));
+    const data = business(response);
+    if (!integer(data.quota)) throw new InputError(502,responseMessage(response));
     const snapshot = { quota: data.quota, usedQuota: integer(data.used_quota) ? data.used_quota : null,
       amount: data.quota, unit: "quota", source: "/api/user/self", updatedAt: checkedAt, note: "" };
     if (config.siteType === "AnyRouter" && config.baseUrl === "https://anyrouter.top") {
@@ -84,12 +88,12 @@ export async function readBalance(ctx, config, client, loginResponse = null) {
         }
       } catch (error) {
         if (cancelled(error)) throw error;
-        snapshot.note = "币种/换算信息不可用，显示原始 quota";
+        snapshot.note = errorMessage(error);
       }
     }
     return { snapshot, checkedAt, error: null };
   } catch (error) {
     if (cancelled(error)) throw error;
-    return { checkedAt, error: error instanceof InputError ? error.message : "余额查询失败，保留上次数据；未重试" };
+    return { checkedAt, error: errorMessage(error) };
   }
 }

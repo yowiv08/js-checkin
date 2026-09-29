@@ -1,3 +1,6 @@
+import { wafHeaders } from "./waf.mjs";
+import { responseMessage } from "./diagnostics.mjs";
+
 /** @returns {import("../sdk/index").HttpRequest & { responseType: "text" }} */
 export function requestFor(config) {
   const agent = config.siteType === "AgentRouter";
@@ -10,14 +13,18 @@ export function requestFor(config) {
     if (config.userAgent) headers["user-agent"] = config.userAgent;
   }
   return {
-    url: config.baseUrl + path, method: "POST", route: config.route, headers,
+    url: config.baseUrl + path, method: "POST", route: config.route, headers: wafHeaders(config, headers),
     responseType: "text", timeoutMs: 30000, followRedirects: false, allowDirectFallback: false,
     ...(agent ? { body: { username: config.username, password: config.password } } : {})
   };
 }
+export function businessAccepted(response) {
+  if (response.statusCode < 200 || response.statusCode >= 300) return false;
+  try { return JSON.parse(response.bodyText)?.success === true; } catch { return false; }
+}
 export function interpret(siteType, response) {
   const httpStatus = response.statusCode;
-  const result = (status, message) => ({ status, message, httpStatus });
+  const result = (status, message) => ({ status, message: responseMessage(response) || message, httpStatus });
   const raw = typeof response.bodyText === "string" ? response.bodyText : "";
   if (httpStatus === 429) return result("RateLimited", "上游限流，未自动重试");
   if (/acw_sc__v2|aliyun_waf|请按住滑块|访问验证|cf-chl-|challenge-platform|http_ratelimit/i.test(raw))

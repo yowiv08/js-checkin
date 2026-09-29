@@ -1,18 +1,19 @@
 import {
   InputError, day, enabled, resultData, acquire, renew, release, accountLock,
-  cancelled, errorMessage
+  cancelled, errorMessage, STATUS_LABELS
 } from "./common.mjs";
 import { readAccount, persist, persistBalance } from "./accounts.mjs";
-import { requestFor, interpret } from "./adapters.mjs";
+import { requestFor, interpret, businessAccepted } from "./adapters.mjs";
 import { readBalance } from "./balance.mjs";
 import { scheduleStamp } from "./schedule.mjs";
 import { cronMatches } from "./cron.mjs";
+import { prepareWaf } from "./waf.mjs";
 
 /** @param {import("./common.mjs").Context} ctx */
 export async function writeLog(ctx, result, taskName) {
   try {
     await ctx.tasks.writeLog({
-      taskName, accountId: result.accountId, status: result.status, message: result.message,
+      taskName, accountId: result.accountId, status: result.status, message: STATUS_LABELS[result.status] || result.status,
       startedAt: result.startedAt, finishedAt: result.finishedAt,
       durationMs: Math.max(0, Date.parse(result.finishedAt) - Date.parse(result.startedAt)),
       details: { httpStatus: result.httpStatus ?? null, attemptId: result.attemptId ?? null }
@@ -80,6 +81,16 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
       if (!gate) return finish("Skipped", "同站点已有登录任务，未并发发送");
     }
     client = await ctx.http.createClient({route:record.config.route,allowDirectFallback:false});
+    const prepared = await prepareWaf(ctx,record.config,client,async()=>{
+      await renew(ctx,lease);
+      if (gate) await renew(ctx,gate);
+    });
+    if (prepared.error) {
+      outcome = finish(prepared.error.status,prepared.error.message,{httpStatus:prepared.error.httpStatus});
+      await renew(ctx,lease);
+      await persist(ctx,record,outcome);
+      return outcome;
+    }
     await ctx.delay(0);
     await renew(ctx, lease);
     if (gate) await renew(ctx, gate);
@@ -90,7 +101,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     await renew(ctx, lease);
     if (gate) await renew(ctx, gate);
     dispatched = true;
-    const {route, ...spec} = requestFor(record.config);
+    const {route, ...spec} = requestFor(prepared.config);
     const response = await client.request(spec);
     const interpreted = interpret(record.config.siteType, response);
     outcome = finish(interpreted.status, interpreted.message, { httpStatus: interpreted.httpStatus });
@@ -101,21 +112,21 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
         sameDay && ["Success", "Already"].includes(outcome.status) ? day() : null, attemptId);
     } catch (error) {
       if (cancelled(error)) throw error;
-      outcome.warning = "上游结果已返回，但本地记录未更新；保留未确认状态，不重发请求";
+      outcome.warning = errorMessage(error);
     }
     if (record.config.queryBalance && !outcome.warning && (
       ["Success","Already"].includes(outcome.status) ||
-      record.config.siteType === "AgentRouter" && outcome.status === "Uncertain"
+      outcome.status === "Uncertain" && businessAccepted(response)
     )) {
       try {
         await renew(ctx,lease);
-        const update = await readBalance(ctx,record.config,client,response);
+        const update = await readBalance(ctx,prepared.config,client,response);
         await renew(ctx,lease);
         const balance = await persistBalance(ctx,record,update);
         if (balance.error) outcome.warning = balance.error;
       } catch (error) {
         if (cancelled(error)) throw error;
-        outcome.warning = "余额未能更新；签到结果不变，未重发任何 POST";
+        outcome.warning = errorMessage(error);
       }
     }
     return outcome;
@@ -123,12 +134,12 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     if (cancelled(error)) throw error;
     const definitelyNotSent = ["host.denied", "host.proxy_pool_unavailable"].includes(error?.code);
     outcome = finish(dispatched && !definitelyNotSent ? "Uncertain" : "Failed",
-      dispatched && !definitelyNotSent ? "请求发生传输或读取错误，无法确认 POST 是否生效，未重试" : errorMessage(error));
+      errorMessage(error),{httpStatus:error?.response?.statusCode ?? error?.response?.status ?? null});
     if (record && lease) {
       try { await renew(ctx, lease); await persist(ctx, record, outcome, null, pending ? attemptId : null); }
       catch (saveError) {
         if (cancelled(saveError)) throw saveError;
-        outcome.warning = "结果未能保存，请检查宿主；未重新发送请求";
+        outcome.warning = errorMessage(saveError);
       }
     }
     return outcome;
@@ -159,7 +170,9 @@ export async function refreshBalance(ctx, accountId) {
     let update;
     try {
       client = await ctx.http.createClient({route:current.config.route,allowDirectFallback:false});
-      update = await readBalance(ctx,current.config,client);
+      const prepared = await prepareWaf(ctx,current.config,client,()=>renew(ctx,lease));
+      update = prepared.error ? {checkedAt:new Date().toISOString(),error:prepared.error.message}
+        : await readBalance(ctx,prepared.config,client);
     } catch (error) {
       if (cancelled(error)) throw error;
       update = {checkedAt:new Date().toISOString(),error:errorMessage(error)};
@@ -167,7 +180,7 @@ export async function refreshBalance(ctx, accountId) {
     await renew(ctx,lease);
     const balance = await persistBalance(ctx,current,update);
     return {total:1,completed:1,results:[{accountId,label:current.account.label,
-      status:balance.error ? "Failed" : "Success",message:balance.error || "余额已更新；未执行签到"}]};
+      status:balance.error ? "Failed" : "Success",message:balance.error || "余额已更新"}]};
   } finally {
     if (client) { try { await client.close(); } catch {  } }
     await release(ctx,lease);

@@ -41,6 +41,8 @@ jobs:
         shell: pwsh
         run: |
           $tag = if ($env:GITHUB_EVENT_NAME -eq 'push') { $env:GITHUB_REF_NAME } else { $null }
+          $version = (Get-Content -LiteralPath ./plugin.json -Raw | ConvertFrom-Json).version
+          if ($tag -and $tag -cne "v$version") { throw 'Release tag 与插件版本不一致。' }
           ./package-release.ps1 -Tag $tag
           $index = Get-Content -LiteralPath ./artifacts/release/release-index.json -Raw | ConvertFrom-Json
           "tag=$($index.tag)" >> $env:GITHUB_OUTPUT

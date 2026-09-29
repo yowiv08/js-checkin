@@ -2,9 +2,10 @@
 
 - 独立项目，纯 JavaScript / Jint Host API 1；不要把实现写回示例仓库。
 - 先读 README.md。生产代码只在 src/，页面在 ui/；sdk/ 是开发期类型快照。
-- 不添加 C#、宿主源码依赖、浏览器自动登录或挑战求解器。
+- 不添加 C#、宿主源码依赖或浏览器自动登录；所有站点共用静态 acw_sc__v2 验证，不执行远端脚本。
 - npm ci；npm run check；npm test；npm run test:build；npm run test:release；npm run build。
 - GitHub 发行使用 PowerShell 7 的 package-release.ps1；仅打包 dist/js-checkin，产物为 ZIP、SHA256 与 release-index.json。
+- 用户要求上传 GitHub 时递增版本号，同步清单、npm 元数据、锁文件与页面版本，推送同版本标签；不覆盖已有版本或标签。
 - 只复制 dist/js-checkin 完整发行包；开发/打包不等于部署授权。
 - 管理员界面和 JSON 按用户要求展示完整 Cookie/密码；绝不提交真实凭据。
 - 日志不记录凭据；POST 不自动重试，取消后保留未确认记录，CAS 不覆盖并发编辑。

@@ -3,7 +3,7 @@
   "id": "js-checkin",
   "name": "中转站签到",
   "description": "New API、AnyRouter、AgentRouter 签到管理，支持余额查询、自定义 Cron、可视化与 JSON 配置。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime": "jint",
   "hostApi": "1",
   "format": "esm-bundle",
@@ -43,7 +43,7 @@
   ],
   "jobs": [
     { "name": "js-checkin-run", "handler": "checkInJob", "timeoutSeconds": 1800, "description": "批量签到与进度查询" },
-    { "name": "js-checkin-balance", "handler": "balanceJob", "timeoutSeconds": 120, "description": "余额查询" }
+    { "name": "js-checkin-balance", "handler": "balanceJob", "timeoutSeconds": 180, "description": "余额查询" }
   ],
   "page": { "title": "中转站签到", "entry": "ui/index.html" }
 }

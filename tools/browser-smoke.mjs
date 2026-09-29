@@ -36,7 +36,8 @@ const rows=[
     enabled:false,available:false,autoCheckIn:false,cookie:"",username:"demo2@example.test",password:"DEMO_ONLY",hasCookie:false,hasPassword:true}
 ].map(row=>({...defaults,...row}));
 const mock=`<script>window.Router2API={request:async(method,route,body)=>{if(route==="accounts")return{accounts:${JSON.stringify(rows)},jobs:[]};if(route==="schedule/preview")return{cron:body.cron,next:["2026-10-01T01:30:00Z"]};throw Error("离线演示不会执行签到")}};</script>`;
-const html=(await fs.readFile(path.join(root,"ui/index.html"),"utf8")).replace("</head>",mock+"</head>").replace(">v0.1.0<",">演示数据 · v0.1.0<");
+const version=JSON.parse(await fs.readFile(path.join(root,"plugin.json"),"utf8")).version;
+const html=(await fs.readFile(path.join(root,"ui/index.html"),"utf8")).replace("</head>",mock+"</head>").replace(`>v${version}<`,`>演示数据 · v${version}<`);
 await fs.writeFile(path.join(out,"index.html"),html);
 await fs.writeFile(path.join(out,"sandbox.html"),`<!doctype html><meta charset="utf-8"><title>宿主沙箱离线测试</title>
 <iframe id="host" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>

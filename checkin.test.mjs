@@ -19,8 +19,9 @@ for(const [type,path] of [["NewAPI","/api/user/checkin"],["AnyRouter","/api/user
     f.handler=async()=>response(type==="AgentRouter"?{success:true,data:{checked_in:false}}:{success:true,message:"签到成功"});
     const result=await runOne(f.ctx(undefined,{phase:"Job"}),a.id);
     assert.equal(result.status,"Success");
-    assert.equal(f.calls.length,1);
-    const req=f.calls[0];assert.equal(req.url,"https://site.example/sub"+path);assert.equal(req.method,"POST");
+    assert.equal(f.calls.length,1);assert.equal(f.probes.length,1);
+    const requests=f.calls.filter(call=>call.method==="POST");assert.equal(requests.length,1);
+    const req=requests[0];assert.equal(req.url,"https://site.example/sub"+path);assert.equal(req.method,"POST");
     assert.equal(req.followRedirects,false);assert.equal(req.allowDirectFallback,false);assert.equal(req.retry,undefined);
     assert.equal(req.headers.origin,"https://site.example");assert.equal(req.headers.referer,"https://site.example/sub"+(type==="AgentRouter"?"/login":"/"));
     if(type==="AgentRouter"){assert.deepEqual(req.body,{username:"ethan@example.test",password:"PASSWORD_SECRET"});assert.equal(req.headers.cookie,undefined)}
@@ -53,9 +54,9 @@ const cases=[
 for(const [label,type,body,code,status]of cases)test(`结果解释：${label}`,()=>{
   const result=interpret(type,response(body,code));assert.equal(result.status,status);
 });
-test("业务失败不能因奖励字段被判成功；错误消息不会回显响应中的秘密",()=>{
+test("业务失败不能因奖励字段被判成功，返回原始业务响应",()=>{
   assert.equal(interpret("NewAPI",response({success:false,data:{reward:3},message:"COOKIE_SECRET"})).status,"Failed");
-  assert.doesNotMatch(JSON.stringify(interpret("AgentRouter",response({success:false,message:"PASSWORD_SECRET"}))),/PASSWORD_SECRET/);
+  assert.equal(interpret("AgentRouter",response({success:false,message:"PASSWORD_SECRET"})).message,'{"success":false,"message":"PASSWORD_SECRET"}');
 });
 test("完整凭据按用户要求返回管理员编辑界面；GET 不触发网络",async()=>{
   const f=fixture();f.seed();f.seed("AgentRouter");
@@ -121,7 +122,7 @@ test("Redis 不可用 / origin 被撤销时 fail closed，不发 POST",async()=>
 test("代理池无节点不直连、不重试",async()=>{
   const f=fixture(),a=f.seed("NewAPI",{route:"pool"});
   f.handler=async()=>{throw Object.assign(Error("no proxy"),{code:"host.proxy_pool_unavailable"})};
-  const out=await runOne(f.ctx(),a.id);assert.equal(out.status,"Failed");assert.match(out.message,/未回退直连/);
+  const out=await runOne(f.ctx(),a.id);assert.equal(out.status,"Failed");assert.equal(out.message,"host.proxy_pool_unavailable: no proxy");
   assert.equal(f.calls.length,1);assert.equal(f.calls[0].route,"pool");
 });
 test("今日成功重复运行跳过；禁用与自动开关在执行时重新检查",async()=>{

@@ -136,6 +136,7 @@ test("工作流使用本项目构建，tag 发布、手动仅打包，发布权�
   const workflow=await fs.readFile(path.join(root,".github/workflows/release-plugins.yml"),"utf8");
   assert.match(workflow,/push:\s+tags: \['v\*'\]/);assert.match(workflow,/workflow_dispatch:/);
   assert.match(workflow,/node-version: '24'/);assert.match(workflow,/cache-dependency-path: package-lock\.json/);
+  assert.ok(workflow.includes('$tag -cne "v$version"'));
   for(const command of ["npm ci","npm run check","npm test","npm run test:build","npm run test:release","npm run build","./package-release.ps1 -Tag $tag"])
     assert.ok(workflow.includes(command),command);
   assert.match(workflow,/permissions:\s+contents: read/);

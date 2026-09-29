@@ -1,5 +1,6 @@
 /** @typedef {import("../sdk/index").PluginContext} Context */
 import { DEFAULT_CRON, parseCron } from "./cron.mjs";
+import { exceptionMessage, RESPONSE_LIMIT } from "./diagnostics.mjs";
 export class InputError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -16,9 +17,7 @@ export const day = (now = Date.now()) => new Date(now + 8 * 3600000).toISOString
 
 export function errorMessage(error) {
   if (error instanceof InputError) return error.message;
-  if (error?.code === "host.proxy_pool_unavailable") return "代理池无可用节点，未回退直连";
-  if (error?.code === "host.denied") return "宿主拒绝操作，请检查权限或 origin 授权";
-  return "宿主操作失败，请检查 Redis、网络或资源预算";
+  return exceptionMessage(error);
 }
 /** @param {(ctx: Context) => Promise<any>} handler */
 export function endpoint(handler) {
@@ -111,7 +110,7 @@ export function resultData(fields) {
     const value = JSON.parse(fields.lastResult || "null");
     if (!object(value) || !Object.hasOwn(STATUS_LABELS, value.status)) return null;
     return {
-      status: value.status, message: typeof value.message === "string" ? value.message.slice(0, 240) : STATUS_LABELS[value.status],
+      status: value.status, message: typeof value.message === "string" ? value.message.slice(0, RESPONSE_LIMIT + 2) : STATUS_LABELS[value.status],
       startedAt: value.startedAt ?? null, finishedAt: value.finishedAt ?? null,
       httpStatus: Number.isInteger(value.httpStatus) ? value.httpStatus : null,
       attemptId: typeof value.attemptId === "string" ? value.attemptId : null

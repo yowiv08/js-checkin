@@ -1,6 +1,6 @@
 {
   "name": "router2api-js-checkin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Router2API 签到管理：New API、AnyRouter 与 AgentRouter",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "check": "node tools/check.mjs",
-    "test": "node --test --test-isolation=none checkin.test.mjs schedule-balance.test.mjs ui.test.mjs",
+    "test": "node --test --test-isolation=none checkin.test.mjs schedule-balance.test.mjs waf.test.mjs diagnostics.test.mjs ui.test.mjs",
     "test:build": "node --test build.test.mjs",
     "test:release": "node --test release.test.mjs",
     "test:browser": "node tools/browser-smoke.mjs",
