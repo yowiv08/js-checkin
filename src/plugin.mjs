@@ -3,6 +3,7 @@ import * as accounts from "./accounts.mjs";
 import { runBatch, refreshBalance } from "./runner.mjs";
 import { DEFAULT_CRON, nextRuns } from "./cron.mjs";
 import { enqueueDue } from "./schedule.mjs";
+export { listTokens, getToken, tokenOptions, tokenKey, createToken, updateToken, setTokenStatus, deleteToken } from "./tokens.mjs";
 
 export const listAccounts = endpoint(accounts.listAccounts);
 export const saveAccount = endpoint(accounts.saveAccount);
@@ -55,8 +56,8 @@ export const previewSchedule = endpoint(async ctx => {
   return ctx.json(200,{cron:DEFAULT_CRON,timezone:"UTC+8",next:nextRuns(DEFAULT_CRON)});
 });
 export const startBalance = endpoint(async ctx => {
-  const accountId = id(input(ctx.body).id), record = await accounts.readAccount(ctx,accountId);
-  if (record.config.siteType === "AgentRouter") throw new InputError(400,"AgentRouter 请使用登录并签到；不会单独登录查询余额");
+  const accountId = id(input(ctx.body).id);
+  await accounts.readAccount(ctx,accountId);
   if (!await ctx.state.shared.available()) throw new InputError(503,"Redis 不可用，未启动查询");
   return ctx.json(202,await ctx.jobs.start("js-checkin-balance",{id:accountId},{key:ctx.crypto.sha256(accountId)}));
 });

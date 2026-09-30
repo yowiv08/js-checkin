@@ -36,6 +36,29 @@ function passing(f) {
     return spec.method === "POST" ? success() : balance();
   };
 }
+for(const route of ["direct","pool"])test(`令牌 ${route} 复用现有 WAF 预检且不发送账号凭据`,async()=>{
+  const f=fixture(),account=f.seed("AnyRouter",{route});
+  f.handler=async spec=>{
+    if(f.calls.length===1)return response(html);
+    if(f.calls.length===2)return noSession();
+    assert.equal(spec.method,"GET");assert.match(spec.url,/\/api\/token\/\?p=0/);
+    return response({success:true,data:[]});
+  };
+  const result=await plugin.listTokens(f.ctx(undefined,{query:{accountId:account.id}}));
+  assert.equal(result.statusCode,200);assert.equal(f.calls.length,3);
+  assert.equal(f.calls[0].headers.cookie,undefined);assert.equal(f.calls[1].headers.cookie,dynamic);
+  assert.equal(f.calls[1].headers["new-api-user"],undefined);
+  assert.ok(f.calls[2].headers.cookie.includes(dynamic));
+  assert.ok(f.calls[2].headers.cookie.includes(JSON.parse(account.credential.fields.config).cookie));
+  assert.equal(posts(f).length,0);
+});
+test("令牌写入遇到 WAF 不重放，预检拦截不提交写请求",async()=>{
+  const f=fixture(),account=f.seed("AnyRouter");
+  f.handler=async()=>response("<html>captcha</html>",403);
+  const result=await plugin.createToken(f.ctx({accountId:account.id,operationId:Date.now()+":00000000-0000-4000-8000-000000000000",
+    changes:{name:"test",unlimited_quota:true}}));
+  assert.equal(result.statusCode,403);assert.equal(posts(f).length,0);
+});
 
 for (const [seed, expected] of vectors) test(`acw_sc__v2 固定向量 ${seed.slice(0,8)}`, () => {
   assert.equal(solveWaf(challenge(seed)),`acw_sc__v2=${expected}`);
@@ -258,7 +281,34 @@ for (const siteType of ["NewAPI","AnyRouter","AgentRouter"]) test(`${siteType} �
   assert.equal(new Set(f.calls.map(call=>call.client)).size,1);
   assert.equal(savedBalance(a).snapshot.amount,"25");
   assert.equal(a.credential.fields.config,before);
-  assert.doesNotMatch(JSON.stringify(a.credential),/LOGIN_SESSION|wafCookie/);
+  const {balanceSession,...fields}=a.credential.fields;
+  assert.doesNotMatch(JSON.stringify(fields),/LOGIN_SESSION|wafCookie/);
+  assert.doesNotMatch(JSON.stringify(a.credential),/acw_sc__v2/);
+  if(siteType==="AgentRouter")assert.equal(JSON.parse(balanceSession).cookie,"session=LOGIN_SESSION");
+  else assert.equal(balanceSession,undefined);
+  const offset=f.calls.length,previous=a.credential.fields.lastResult;
+  const nextCookie=`acw_sc__v2=${vectors[1][1]}`;
+  f.handler=async spec=>{
+    if(f.calls.length===offset+1)return response(challenge(vectors[1][0]),403);
+    if(f.calls.length===offset+2)return noSession();
+    if(spec.url.endsWith("/api/status"))return response({success:true,data:{quota_per_unit:500000,quota_display_type:"USD"}});
+    return balance();
+  };
+  assert.equal((await refreshBalance(f.ctx(),a.id)).results[0].status,"Success");
+  const refreshed=f.calls.slice(offset);
+  assert.ok(refreshed.every(call=>call.method==="GET"&&call.route==="pool"&&!call.allowDirectFallback&&call.body===undefined));
+  assert.equal(refreshed[0].headers.cookie,undefined);assert.equal(refreshed[0].headers["new-api-user"],undefined);
+  assert.equal(refreshed[1].headers.cookie,nextCookie);assert.equal(refreshed[1].headers["new-api-user"],undefined);
+  assert.equal(refreshed[2].headers.cookie,(siteType==="AgentRouter"?"session=LOGIN_SESSION":"session=COOKIE_SECRET")+`; ${nextCookie}`);
+  assert.equal(refreshed[2].headers["new-api-user"],siteType==="AgentRouter"?"42":"90071992547409931234");
+  if(refreshed[3]){
+    assert.equal(refreshed[3].headers.cookie,nextCookie);assert.equal(refreshed[3].headers["new-api-user"],undefined);
+  }
+  assert.equal(new Set(refreshed.map(call=>call.client)).size,1);
+  assert.notEqual(refreshed[0].client,f.calls[0].client);
+  assert.equal(a.credential.fields.lastResult,previous);
+  assert.equal(a.credential.fields.balanceSession,balanceSession);
+  assert.equal(posts(f).length,1);
 });
 test("AgentRouter 滑动验证原文返回，不误用 acw_sc__v2 算法",async()=>{
   const f=fixture(),a=f.seed("AgentRouter");

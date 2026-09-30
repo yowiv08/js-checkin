@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "js-checkin",
   "name": "中转站签到",
-  "description": "New API、AnyRouter、AgentRouter 签到管理，每天 10:10 UTC+8 统一签到，支持余额查询、可视化与 JSON 配置。",
-  "version": "0.1.2",
+  "description": "New API、AnyRouter、AgentRouter 签到管理，每天 10:10 UTC+8 统一签到，支持余额查询、API 令牌管理、可视化与 JSON 配置。",
+  "version": "0.2.0",
   "runtime": "jint",
   "hostApi": "1",
   "format": "esm-bundle",
@@ -36,7 +36,15 @@
     { "method": "POST", "path": "schedule/preview", "handler": "previewSchedule", "auth": "AdminSession" },
     { "method": "POST", "path": "balance/start", "handler": "startBalance", "auth": "AdminSession" },
     { "method": "GET", "path": "jobs/status", "handler": "jobStatus", "auth": "AdminSession" },
-    { "method": "POST", "path": "jobs/cancel", "handler": "cancelJob", "auth": "AdminSession" }
+    { "method": "POST", "path": "jobs/cancel", "handler": "cancelJob", "auth": "AdminSession" },
+    { "method": "GET", "path": "tokens/list", "handler": "listTokens", "auth": "AdminSession" },
+    { "method": "GET", "path": "tokens/detail", "handler": "getToken", "auth": "AdminSession" },
+    { "method": "GET", "path": "tokens/options", "handler": "tokenOptions", "auth": "AdminSession" },
+    { "method": "POST", "path": "tokens/key", "handler": "tokenKey", "auth": "AdminSession" },
+    { "method": "POST", "path": "tokens/create", "handler": "createToken", "auth": "AdminSession" },
+    { "method": "POST", "path": "tokens/update", "handler": "updateToken", "auth": "AdminSession" },
+    { "method": "POST", "path": "tokens/status", "handler": "setTokenStatus", "auth": "AdminSession" },
+    { "method": "POST", "path": "tokens/delete", "handler": "deleteToken", "auth": "AdminSession" }
   ],
   "tasks": [
     { "name": "js-checkin-daily", "handler": "dailyCheckIn", "cron": "0 10 10 * * *", "timeoutSeconds": 60, "description": "统一每天 10:10（UTC+8）自动签到" }

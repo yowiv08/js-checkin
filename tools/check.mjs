@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Script } from "node:vm";
 import assert from "node:assert/strict";
 import ts from "typescript";
+import { renderPage } from "./ui.mjs";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const manifestText=await fs.readFile(path.join(root,"plugin.json"),"utf8");
@@ -39,7 +40,7 @@ else{
     }
     inspect(parsed);
   }
-  const html=await fs.readFile(path.join(root,manifest.page.entry),"utf8");
+  const html=await renderPage(root);
   assert.ok(html.includes(`<span class="tag">v${manifest.version}</span>`),"页面与插件版本不一致");
   const scripts=[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)];
   for(const [index,script]of scripts.entries())new Script(script[1],{filename:`ui/index.html#${index}`});

@@ -4,7 +4,7 @@ import {parseCron,cronMatches,nextRuns,DEFAULT_CRON,dailySlot} from "./src/cron.
 import {configFrom,decode,day,acquire,accountLock} from "./src/common.mjs";
 import {runOne,refreshBalance} from "./src/runner.mjs";
 import {blocksUncertain} from "./src/uncertainty.mjs";
-import {readAccount,persistBalance,card} from "./src/accounts.mjs";
+import {readAccount,persistBalance,card,readAgentSession,persistAgentSession} from "./src/accounts.mjs";
 import {exactJson,agentSession} from "./src/balance.mjs";
 import * as plugin from "./src/plugin.mjs";
 
@@ -230,7 +230,7 @@ function login(checked=false,headers=["session=TEMP_ONLY; Path=/; HttpOnly; Secu
   const r=response('{"success":true,"data":{"id":90071992547409931234'+(checked===null?'':`,"checked_in":${checked}`)+'}}');
   r.headers={"set-cookie":headers};return r;
 }
-test("Agent 登录后复用临时 Cookie + 精确 UID + 同代理；会话不持久化",async()=>{
+test("Agent 登录后保存 Cookie + 精确 UID；手动刷新复用会话且不重新签到",async()=>{
   const f=fixture(),a=f.seed("AgentRouter",{queryBalance:true,route:"pool"});
   f.handler=async spec=>spec.method==="POST"?login():cookieHandler(spec);
   assert.equal((await runOne(f.ctx(),a.id)).status,"Success");
@@ -239,10 +239,42 @@ test("Agent 登录后复用临时 Cookie + 精确 UID + 同代理；会话不持
   assert.equal(f.calls[1].headers["new-api-user"],"90071992547409931234");
   assert.equal(new Set(f.calls.map(c=>c.client)).size,1);
   assert.equal(storedBalance(a).snapshot.amount,"25");
-  assert.doesNotMatch(JSON.stringify(a.credential),/TEMP_ONLY/);
+  assert.equal(JSON.parse(a.credential.fields.balanceSession).cookie,"session=TEMP_ONLY");
+  assert.doesNotMatch(JSON.stringify(card(await readAccount(f.ctx(),a.id))),/TEMP_ONLY|balanceSession/);
+  assert.doesNotMatch(JSON.stringify((await plugin.listAccounts(f.ctx())).body),/TEMP_ONLY|balanceSession/);
+  assert.doesNotMatch(a.credential.fields.config,/TEMP_ONLY/);
   assert.ok(!f.calls.some(c=>c.url.endsWith("sign_in")||c.url.endsWith("checkin")));
-  assert.equal((await plugin.startBalance(f.ctx({id:a.id}))).statusCode,400);
-  await assert.rejects(refreshBalance(f.ctx(),a.id),/不会为刷新/);
+  const previous=a.credential.fields.lastResult,successDay=a.credential.fields.lastSuccessDay;
+  const started=await plugin.startBalance(f.ctx({id:a.id}));
+  assert.equal(started.statusCode,202);assert.deepEqual(started.body.input,{id:a.id});
+  assert.equal((await plugin.startBalance(f.ctx({id:a.id}))).body.id,started.body.id);
+  const refreshed=await plugin.balanceJob(f.ctx(),started.body.input);
+  assert.equal(refreshed.results[0].status,"Success");
+  assert.deepEqual(f.calls.slice(3).map(c=>[c.method,new URL(c.url).pathname]),[["GET","/api/user/self"],["GET","/api/status"]]);
+  assert.equal(f.calls[3].headers.cookie,"session=TEMP_ONLY");
+  assert.equal(f.calls[3].headers["new-api-user"],"90071992547409931234");
+  assert.equal(f.calls[3].body,undefined);
+  assert.equal(f.calls[4].headers.cookie,undefined);assert.equal(f.calls[4].headers["new-api-user"],undefined);
+  assert.equal(f.clients.length,2);
+  assert.ok(f.clients.every(c=>c.closed&&c.options.route==="pool"&&c.options.allowDirectFallback===false));
+  assert.equal(f.calls.filter(c=>c.method==="POST").length,1);
+  assert.equal(a.credential.fields.lastResult,previous);assert.equal(a.credential.fields.lastSuccessDay,successDay);
+  assert.doesNotMatch(JSON.stringify([f.logs,[...f.jobs.values()],f.progress]),/TEMP_ONLY/);
+});
+test("Agent 关闭签到后查余额仍保存会话；未知签到标志也不阻止只读刷新",async()=>{
+  for(const checked of [false,null]){
+    const f=fixture(),a=f.seed("AgentRouter",{queryBalance:false});
+    f.handler=async spec=>spec.method==="POST"?login(checked):cookieHandler(spec);
+    const out=await runOne(f.ctx(),a.id);
+    assert.equal(out.status,checked===false?"Success":"Uncertain");
+    assert.equal(f.calls.length,1);assert.equal(a.credential.fields.balance,undefined);
+    assert.ok(a.credential.fields.balanceSession);
+    const previous=a.credential.fields.lastResult;
+    assert.equal((await refreshBalance(f.ctx(),a.id)).results[0].status,"Success");
+    assert.equal(a.credential.fields.lastResult,previous);
+    assert.equal(storedBalance(a).snapshot.amount,"25");
+    assert.equal(f.calls.filter(c=>c.method==="POST").length,1);
+  }
 });
 test("Agent 缺签到标志即使余额成功仍为未确认；缺会话不登录第二次",async()=>{
   for(const headers of [["session=TEMP_ONLY; Path=/"],[]]){
@@ -259,9 +291,124 @@ test("临时 session 拒绝不匹配 domain/path、失效、多义、控制字�
   for(const headers of [
     ["session=X; Domain=evil.example"],["session=X; Path=/other"],["session=X; Max-Age=0"],
     ["session=X; Expires=Thu, 01 Jan 1970 00:00:00 GMT"],["session=X\r\nCookie:Y"],
-    ["session=X","session=Y"],["other=X"]
+    ["session=X","session=Y"],["other=X"],["session=X\u0001"],["session=X\u007f"],
+    ["session=X; Max-Age=3600; Max-Age=7200"],["session=X; Path=/; Path=/api"],
+    ["session=X; Max-Age=999999999999999999999999"],['session="X"']
   ])assert.throws(()=>agentSession(c,login(false,headers)));
   assert.equal(agentSession({...c,baseUrl:c.baseUrl+"/sub"},login(false,["session=X; Path=/sub"])).cookie,"session=X");
+});
+test("Agent 会话期限按 Max-Age/Expires 校验；无期限会话仅在上游认证有效时复用",async t=>{
+  const now=Date.parse("2026-09-30T02:00:00Z");
+  t.mock.timers.enable({apis:["Date"],now});
+  const f=fixture(),a=f.seed("AgentRouter"),c=decode(f.ctx(),a.credential);
+  assert.equal(agentSession(c,login()).expiresAt,null);
+  assert.equal(agentSession(c,login(false,["session=X; Max-Age=60"])).expiresAt,now+60000);
+  assert.equal(agentSession(c,login(false,["session=X; Expires=Wed, 30 Sep 2026 02:10:00 GMT"])).expiresAt,now+600000);
+  assert.equal(agentSession(c,login(false,["session=X; Max-Age=60; Expires=Thu, 01 Jan 1970 00:00:00 GMT"])).expiresAt,now+60000);
+  await persistAgentSession(f.ctx(),await readAccount(f.ctx(),a.id),agentSession(c,login(false,["session=X; Max-Age=60"])));
+  t.mock.timers.tick(60000);
+  const out=await refreshBalance(f.ctx(),a.id);
+  assert.equal(out.results[0].status,"Failed");assert.match(out.results[0].message,/会话已过期.*登录并签到/);
+  assert.equal(a.credential.fields.balanceSession,undefined);
+  assert.equal(f.requests.length,0);
+});
+async function seedSession(f,a,headers) {
+  const record=await readAccount(f.ctx(),a.id);
+  await persistAgentSession(f.ctx(),record,agentSession(record.config,login(false,headers)));
+}
+test("Agent 缺失/损坏会话不发送请求，保留旧余额并明确提示登录",async()=>{
+  for(const raw of [undefined,"invalid",JSON.stringify({cookie:"session=X",userId:"1",expiresAt:null})]){
+    const f=fixture(),a=f.seed("AgentRouter");
+    a.credential.fields.balanceSession=raw;
+    a.credential.fields.balance=JSON.stringify({state:"Fresh",snapshot:{amount:"25",unit:"USD"}});
+    const out=await refreshBalance(f.ctx(),a.id);
+    assert.equal(out.results[0].status,"Failed");assert.match(out.results[0].message,/缺少有效登录会话.*登录并签到/);
+    assert.equal(storedBalance(a).state,"Stale");assert.equal(storedBalance(a).snapshot.amount,"25");
+    assert.equal(a.credential.fields.balanceSession,undefined);assert.equal(f.clients.length,0);
+    assert.equal(f.requests.length,0);assert.equal(a.credential.fields.lastResult,undefined);
+  }
+});
+test("Agent 上游认证失效清除会话；后续刷新不登录且不再发送失效会话",async()=>{
+  for(const reply of [response("",401),response({success:false,message:"未登录"})]){
+    const f=fixture(),a=f.seed("AgentRouter");await seedSession(f,a);f.handler=cookieHandler;
+    await refreshBalance(f.ctx(),a.id);
+    f.handler=async()=>reply;
+    const out=await refreshBalance(f.ctx(),a.id);
+    assert.equal(out.results[0].status,"Failed");assert.match(out.results[0].message,/会话已失效.*登录并签到/);
+    assert.equal(a.credential.fields.balanceSession,undefined);
+    assert.equal(storedBalance(a).snapshot.amount,"25");assert.equal(storedBalance(a).state,"Stale");
+    const count=f.requests.length;await refreshBalance(f.ctx(),a.id);assert.equal(f.requests.length,count);
+    assert.ok(f.calls.every(c=>c.method==="GET"));assert.equal(a.credential.fields.lastSuccessDay,undefined);
+  }
+});
+test("Agent 签到后余额认证失败也清除刚保存的会话，不丢失签到确认",async()=>{
+  const f=fixture(),a=f.seed("AgentRouter",{queryBalance:true});
+  f.handler=async spec=>spec.method==="POST"?login():response("",401);
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Success");
+  assert.equal(a.credential.fields.balanceSession,undefined);assert.equal(storedBalance(a).state,"Unknown");
+  assert.equal(a.credential.fields.lastSuccessDay,day());assert.equal(f.calls.length,2);
+});
+test("Agent 余额 WAF/限流/服务器错误保留会话，取消透传，不重放登录",async()=>{
+  for(const reply of [response("acw_sc__v2",403),response("",429),response("",500),null]){
+    const f=fixture(),a=f.seed("AgentRouter");await seedSession(f,a);
+    const raw=a.credential.fields.balanceSession;
+    f.handler=async()=>{if(reply)return reply;throw cancellation()};
+    if(reply)assert.equal((await refreshBalance(f.ctx(),a.id)).results[0].status,"Failed");
+    else await assert.rejects(refreshBalance(f.ctx(),a.id),{code:"host.cancelled"});
+    assert.equal(a.credential.fields.balanceSession,raw);
+    assert.ok(f.calls.every(c=>c.method==="GET"));assert.ok(f.clients.every(c=>c.closed));
+  }
+});
+test("Agent 会话绑定账号身份和网络设置，普通编辑保留，认证或路线变化清除",async()=>{
+  for(const change of [{password:"NEW"},{username:"new",password:"NEW"},{baseUrl:"https://other.example",password:"NEW",approveOrigin:true},
+    {route:"pool"},{siteType:"AnyRouter",cookie:"session=OTHER",userId:"2"}]){
+    const f=fixture(),a=f.seed("AgentRouter");await seedSession(f,a);
+    const record=await readAccount(f.ctx(),a.id);
+    const out=await plugin.saveAccount(f.ctx({id:a.id,version:String(a.version),...change}));
+    assert.equal(out.statusCode,200);assert.equal(a.credential.fields.balanceSession,undefined);
+    await assert.rejects(persistAgentSession(f.ctx(),record,agentSession(record.config,login())),/配置变化/);
+  }
+  const f=fixture(),a=f.seed("AgentRouter");await seedSession(f,a);
+  const raw=a.credential.fields.balanceSession;
+  assert.equal((await plugin.saveAccount(f.ctx({id:a.id,version:String(a.version),label:"renamed",queryBalance:true,autoCheckIn:false}))).statusCode,200);
+  assert.equal(a.credential.fields.balanceSession,raw);
+  const b=f.seed("AgentRouter",{username:"another"});b.credential.fields.balanceSession=raw;
+  assert.throws(()=>readAgentSession(f.ctx(),{config:decode(f.ctx(),b.credential),credential:b.credential}),/缺少有效/);
+});
+test("Agent 会话 CAS 合并编辑、持续冲突不重发登录，不用旧结果覆盖并发认证变化",async()=>{
+  const f=fixture(),a=f.seed("AgentRouter");let changed=false;
+  f.casHook=async(_,__,credential)=>{
+    if(changed||!credential.fields.balanceSession)return;
+    changed=true;a.version++;
+    a.credential.fields.config=JSON.stringify({...JSON.parse(a.credential.fields.config),queryBalance:true});
+  };
+  f.handler=async()=>login();
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Success");
+  assert.equal(JSON.parse(a.credential.fields.config).queryBalance,true);assert.ok(a.credential.fields.balanceSession);
+  assert.equal(f.calls.length,1);
+  const g=fixture(),b=g.seed("AgentRouter");
+  g.casHook=async(_,__,credential)=>{if(credential.fields.balanceSession)b.version++};
+  g.handler=async()=>login();
+  const out=await runOne(g.ctx(),b.id);
+  assert.equal(out.status,"Success");assert.match(out.warning,/并发冲突/);
+  assert.equal(b.credential.fields.lastSuccessDay,day());assert.equal(g.calls.length,1);
+  assert.equal(b.credential.fields.balanceSession,undefined);
+  const h=fixture(),c=h.seed("AgentRouter",{queryBalance:true});let switched=false;
+  h.casHook=async(_,__,credential)=>{
+    if(switched||!credential.fields.balanceSession)return;
+    switched=true;c.version++;
+    c.credential.fields.config=JSON.stringify({...JSON.parse(c.credential.fields.config),password:"CHANGED"});
+  };
+  h.handler=async()=>login();
+  assert.match((await runOne(h.ctx(),c.id)).warning,/配置变化/);
+  assert.equal(c.credential.fields.balanceSession,undefined);assert.equal(h.calls.length,1);
+});
+test("Agent 余额认证失败 CAS 不删除并发写入的新会话",async()=>{
+  const f=fixture(),a=f.seed("AgentRouter");await seedSession(f,a);
+  const record=await readAccount(f.ctx(),a.id);
+  await seedSession(f,a,["session=NEW_SESSION; Path=/"]);
+  await persistBalance(f.ctx(),record,{checkedAt:"now",error:"expired",authExpired:true});
+  assert.equal(JSON.parse(a.credential.fields.balanceSession).cookie,"session=NEW_SESSION");
 });
 test("余额 GET 取消发生在签到确认后：job 取消，确认记录保留，不伪造余额",async()=>{
   const f=fixture(),a=f.seed("NewAPI",{queryBalance:true});

@@ -20,9 +20,13 @@ test("发行包仅清单、单个 ESM、自包含页面，静态构建不调用�
     assert.ok(manifest.endpoints.some(e=>e.path==="balance/start"));
     assert.ok(manifest.endpoints.some(e=>e.path==="schedule/preview"));
     assert.ok(manifest.endpoints.every(e=>e.auth==="AdminSession"));
+    assert.deepEqual(manifest.endpoints.filter(e=>e.path.startsWith("tokens/")).map(e=>e.path).sort(),
+      ["tokens/create","tokens/delete","tokens/detail","tokens/key","tokens/list","tokens/options","tokens/status","tokens/update"]);
     const code=await fs.readFile(path.join(output,manifest.entry),"utf8");
     assert.doesNotMatch(code,/\b(?:import|require)\s*\(|from\s*["']|node:|process\.|globalThis\.fetch/);
-    assert.match(await fs.readFile(path.join(output,"ui/index.html"),"utf8"),/JSON/);
+    const page=await fs.readFile(path.join(output,"ui/index.html"),"utf8");
+    assert.match(page,/JSON/);assert.match(page,/CheckinTokens/);assert.match(page,/tokens\/create/);
+    assert.doesNotMatch(page,/<!-- TOKEN_MODULE -->|<script[^>]+src=/);
     await assert.rejects(buildPlugin(root,root),/overwrite/);
   }finally{
     const resolved=path.resolve(temp);

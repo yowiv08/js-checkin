@@ -2,9 +2,9 @@ import {
   InputError, day, enabled, acquire, renew, release, accountLock,
   cancelled, errorMessage, STATUS_LABELS
 } from "./common.mjs";
-import { readAccount, persist, persistBalance } from "./accounts.mjs";
+import { readAccount, persist, persistBalance, readAgentSession, persistAgentSession } from "./accounts.mjs";
 import { requestFor, interpret, businessAccepted } from "./adapters.mjs";
-import { readBalance } from "./balance.mjs";
+import { readBalance, agentSession } from "./balance.mjs";
 import { scheduleStamp } from "./schedule.mjs";
 import { cronMatches, DEFAULT_CRON } from "./cron.mjs";
 import { prepareWaf } from "./waf.mjs";
@@ -116,13 +116,26 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
       if (cancelled(error)) throw error;
       outcome.warning = errorMessage(error);
     }
-    if (record.config.queryBalance && !outcome.warning && (
+    const accepted = (
       ["Success","Already"].includes(outcome.status) ||
       outcome.status === "Uncertain" && businessAccepted(response)
-    )) {
+    );
+    let session = null;
+    if (record.config.siteType === "AgentRouter" && accepted && !outcome.warning) {
+      try { session = agentSession(prepared.config,response); }
+      catch (error) { if (cancelled(error)) throw error; }
       try {
         await renew(ctx,lease);
-        const update = await readBalance(ctx,prepared.config,client,response);
+        record.credential.fields.balanceSession = await persistAgentSession(ctx,record,session);
+      } catch (error) {
+        if (cancelled(error)) throw error;
+        outcome.warning = errorMessage(error);
+      }
+    }
+    if (record.config.queryBalance && !outcome.warning && accepted) {
+      try {
+        await renew(ctx,lease);
+        const update = await readBalance(ctx,prepared.config,client,session);
         await renew(ctx,lease);
         const balance = await persistBalance(ctx,record,update);
         if (balance.error) outcome.warning = balance.error;
@@ -158,26 +171,26 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
 
 /** @param {import("./common.mjs").Context} ctx */
 export async function refreshBalance(ctx, accountId) {
-  const record = await readAccount(ctx,accountId);
-  if (record.config.siteType === "AgentRouter") throw new InputError(400,"AgentRouter 余额仅随登录签到更新；不会为刷新余额重新登录");
+  await readAccount(ctx,accountId);
   const lease = await acquire(ctx,accountLock(ctx,accountId));
   if (!lease) throw new InputError(409,"账号正在执行或编辑");
   let client;
   try {
     const current = await readAccount(ctx,accountId);
     if (!enabled(current)) throw new InputError(400,"账号已停用");
-    if (current.config.siteType === "AgentRouter") throw new InputError(409,"账号类型已变化");
     if (!(await ctx.http.approvedOrigins()).includes(ctx.url.parse(current.config.baseUrl).origin))
       throw new InputError(403,"origin 未授权，未查询余额");
     let update;
     try {
+      const session = current.config.siteType === "AgentRouter" ? readAgentSession(ctx,current) : null;
       client = await ctx.http.createClient({route:current.config.route,allowDirectFallback:false});
       const prepared = await prepareWaf(ctx,current.config,client,()=>renew(ctx,lease));
       update = prepared.error ? {checkedAt:new Date().toISOString(),error:prepared.error.message}
-        : await readBalance(ctx,prepared.config,client);
+        : await readBalance(ctx,prepared.config,client,session);
     } catch (error) {
       if (cancelled(error)) throw error;
-      update = {checkedAt:new Date().toISOString(),error:errorMessage(error)};
+      update = {checkedAt:new Date().toISOString(),error:errorMessage(error),
+        ...(current.config.siteType === "AgentRouter" && error instanceof InputError && error.status === 401 ? {authExpired:true} : {})};
     }
     await renew(ctx,lease);
     const balance = await persistBalance(ctx,current,update);

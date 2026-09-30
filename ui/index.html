@@ -37,13 +37,29 @@
     .balance-box{border-radius:12px;background:linear-gradient(125deg,#f2efff,#f7f9ff);border:1px solid #e9e4ff;padding:14px 15px}.balance-head{display:flex;justify-content:space-between;align-items:center;color:#80759e;font-size:11px;gap:8px}.balance-head button{font-size:10px;padding:4px 8px;background:#ffffff90;border-color:#e6dff7}.balance-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin:6px 0;font-variant-numeric:tabular-nums}.balance-value strong{font-size:25px;font-weight:650;letter-spacing:-.5px;color:#4d407d;overflow-wrap:anywhere;min-width:0}.balance-value span{font-size:11px;color:#8b81a4}.balance-note{font-size:10px;color:#8a829a;overflow-wrap:anywhere}.balance-note.stale{color:#a47832}.card-schedule{font-size:10px;color:var(--muted);display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}.card-schedule code{color:#786a9c;overflow-wrap:anywhere}.cron-settings{background:#f8f7fd;border:1px solid #e8e3f5;border-radius:12px;padding:15px;display:grid;gap:12px}.cron-presets{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11px;color:var(--muted)}.cron-presets input{width:112px;padding:6px 9px;border:1px solid #ddd6ed;border-radius:7px}.cron-presets button{padding:6px 10px;font-size:11px}.schedule-preview{margin-top:14px;display:flex;gap:10px;align-items:flex-start;font-size:11px;color:var(--muted)}.schedule-preview button{font-size:11px;white-space:nowrap}.schedule-preview output{white-space:pre-line;padding:5px 0;overflow-wrap:anywhere}.form-switches{flex-wrap:wrap;gap:14px 25px}
     @media(min-width:1250px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:1000px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.app{padding:24px}.stats{gap:10px}.stat{padding:15px}.stat-icon{display:none}}
     @media(max-width:640px){.app{padding:17px 14px}.topline{margin-bottom:16px}.hero{padding:25px 21px;min-height:155px}.hero h1{font-size:25px}.schedule{display:none}.stats{grid-template-columns:repeat(2,1fr);margin:16px 0 22px}.stat strong{font-size:25px}.stat-icon{display:grid}.grid{grid-template-columns:1fr}.toolbar,.filters{align-items:stretch;flex-direction:column;gap:12px}.toolbar .actions{justify-content:flex-end}.search{width:100%}.tabs{justify-content:space-between}.tabs button{padding:7px 10px}.footer{flex-direction:column}.modal-head,.modal-body{padding:18px}.modal-foot{padding:14px 18px}.fields{grid-template-columns:1fr}.wide{grid-column:auto}.editor-tools{align-items:stretch;flex-direction:column}.editor-tools .actions{justify-content:flex-end}.modal-foot small{display:none}.modal-foot{justify-content:flex-end}}
+    .workspace-nav{margin:22px 0;justify-content:flex-start;display:inline-flex}.card-actions{flex-wrap:wrap}
+    .token-selector{max-width:440px;min-width:0;flex:1}.token-selector select{background:white}
+    .token-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:white}
+    .token-table{border-collapse:collapse;width:100%;text-align:left;font-size:12px}.token-table th{font-weight:600;color:var(--muted);background:#fafafe;white-space:nowrap}
+    .token-table th,.token-table td{padding:16px 14px;border-bottom:1px solid var(--line);vertical-align:middle}.token-table tr:last-child td{border-bottom:0}
+    .token-table td{overflow-wrap:anywhere;max-width:280px}.token-table .actions{min-width:155px;gap:5px}.token-table button{font-size:11px;padding:5px 8px}
+    .token-key{display:block;font:11px/1.7 Consolas,monospace;width:100%;min-width:110px;border:0;color:var(--muted);background:transparent;padding:0;margin-top:5px}
+    .token-status{font-size:11px;border-radius:6px;padding:4px 7px;background:#eef7f1;color:var(--green);white-space:nowrap}.token-status.disabled{background:#f2f2f7;color:var(--muted)}
+    .token-pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:18px;color:var(--muted);font-size:12px}
+    #tokenPageError{min-height:20px}#tokenEditor fieldset{border:0;padding:0;margin:0;min-width:0}
+    .token-options{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:10px;display:grid;gap:6px}
+    .token-options label{display:flex;align-items:center;gap:8px;font-size:12px;overflow-wrap:anywhere}.token-options input{width:auto}
+    .token-section-title{font-size:13px;margin:4px 0 0;color:var(--purple)}.token-quota-note{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+    @media(max-width:640px){.token-selector{max-width:none}.token-pagination{justify-content:space-between}.token-table th,.token-table td{padding:12px 10px}}
     @media(prefers-reduced-motion:reduce){*{transition:none!important}}
   </style>
 </head>
 <body>
 <main class="app">
-  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.1.2</span></header>
-  <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询</p></div><div class="schedule"><small><span class="live"></span>统一签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.2.0</span></header>
+  <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询、API 令牌</p></div><div class="schedule"><small><span class="live"></span>统一签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
+  <nav class="tabs workspace-nav" aria-label="工作台模块"><button id="accountsTab" class="active" aria-pressed="true">签到账号</button><button id="tokensTab" aria-pressed="false">API 令牌</button></nav>
+  <section id="accountsPage">
   <section class="stats" aria-label="账号概况">
     <div class="stat"><div><span class="stat-label">全部账号</span><strong id="statTotal">0</strong></div><span class="stat-icon">▦</span></div>
     <div class="stat"><div><span class="stat-label">今日已确认</span><strong id="statSuccess">0</strong></div><span class="stat-icon">✓</span></div>
@@ -57,6 +73,13 @@
   <div class="toolbar"><div class="section-title">签到账号</div><div class="actions"><button id="refresh">↻ 刷新</button><button id="runAll">全部签到</button><button id="add" class="primary">＋ 添加账号</button></div></div>
   <div class="filters"><nav class="tabs" id="filters" aria-label="站点筛选"><button data-type="all" class="active" aria-pressed="true">全部</button><button data-type="NewAPI" aria-pressed="false">New API</button><button data-type="AnyRouter" aria-pressed="false">AnyRouter</button><button data-type="AgentRouter" aria-pressed="false">AgentRouter</button></nav><input class="search" id="search" aria-label="搜索账号" placeholder="搜索备注、站点地址…" type="search"></div>
   <section id="cards" class="grid" aria-label="签到账号列表"><div class="empty">正在读取账号…</div></section>
+  </section>
+  <section id="tokensPage" hidden aria-label="API 令牌管理">
+    <div class="toolbar"><label class="field token-selector"><span>管理账号</span><select id="tokenAccount" aria-label="令牌所属账号"></select></label><div class="actions"><button id="tokenRefresh">↻ 刷新令牌</button><button id="tokenAdd" class="primary">＋ 新建令牌</button></div></div>
+    <p id="tokenPageError" class="error" role="status"></p>
+    <div id="tokenList"></div>
+    <div class="token-pagination"><span id="tokenPageLabel"></span><button id="tokenPrev">上一页</button><button id="tokenNext">下一页</button></div>
+  </section>
 </main>
 <dialog id="editor" aria-labelledby="editorTitle">
   <form id="accountForm" novalidate>
@@ -84,6 +107,31 @@
     <footer class="modal-foot"><div class="actions"><button type="button" id="discard">取消</button><button type="submit" id="save" class="primary">保存</button></div></footer>
   </form>
 </dialog>
+<dialog id="tokenEditor" aria-labelledby="tokenEditorTitle">
+  <form id="tokenForm" novalidate>
+    <header class="modal-head"><h2 id="tokenEditorTitle">新建令牌</h2><button type="button" class="close" id="tokenClose" aria-label="关闭令牌编辑器">×</button></header>
+    <div class="modal-body">
+      <fieldset id="tokenFields" class="fields">
+        <h3 class="token-section-title wide">基本信息</h3>
+        <label class="field"><span>名称</span><input name="name" autocomplete="off" required></label>
+        <label class="field"><span>分组</span><select name="group"><option value="">使用账号分组</option></select></label>
+        <label class="toggle wide"><input type="checkbox" name="neverExpires" checked>永不过期</label>
+        <label class="field wide"><span>过期时间 · UTC+8</span><input name="expires" type="datetime-local" step="1" disabled></label>
+        <h3 class="token-section-title wide">额度设置</h3>
+        <label class="toggle wide"><input type="checkbox" name="unlimited_quota">无限额度</label>
+        <label class="field"><span>输入方式</span><select name="quotaMode"><option value="amount">金额</option><option value="quota">quota</option></select></label>
+        <label class="field"><span id="tokenQuotaLabel">剩余额度</span><input name="quotaValue" inputmode="decimal" autocomplete="off" placeholder="请填写额度"></label>
+        <output id="tokenQuotaNote" class="token-quota-note wide"></output>
+        <h3 class="token-section-title wide">访问限制</h3>
+        <label class="toggle wide"><input type="checkbox" name="model_limits_enabled">启用模型限制</label>
+        <div class="field wide"><input id="tokenModelSearch" type="search" aria-label="搜索模型" placeholder="搜索模型"><div id="tokenModels" class="token-options"></div></div>
+        <label class="field wide"><span>IP 白名单</span><textarea name="allow_ips" rows="3" spellcheck="false" placeholder="IPv4、IPv6 或 CIDR，一行一项；留空不限制"></textarea></label>
+      </fieldset>
+      <p id="tokenOptionWarning" class="token-quota-note"></p><p id="tokenFormError" class="error" role="alert"></p>
+    </div>
+    <footer class="modal-foot"><button type="button" id="tokenCancel">取消</button><button type="submit" id="tokenSave" class="primary">保存</button></footer>
+  </form>
+</dialog>
 <dialog id="confirmation" aria-labelledby="confirmationTitle" style="max-width:470px">
   <header class="modal-head"><h2 id="confirmationTitle">确认操作</h2></header>
   <div class="modal-body"><p id="confirmationText" style="margin:0;line-height:1.85;overflow-wrap:anywhere"></p></div>
@@ -91,6 +139,7 @@
 </dialog>
 <input id="jsonFile" type="file" accept=".json,application/json" hidden>
 <div id="toast" class="toast" role="status" hidden></div>
+<!-- TOKEN_MODULE -->
 <script>
 (() => {
   "use strict";
@@ -116,6 +165,7 @@
   function answer(value){$("#confirmation").close();const resolve=confirmationResolve;confirmationResolve=null;resolve?.(value)}
   $("#acceptConfirm").onclick=()=>answer(true);$("#rejectConfirm").onclick=()=>answer(false);
   $("#confirmation").addEventListener("cancel",event=>{event.preventDefault();answer(false)});
+  const tokens=CheckinTokens.mount({api,notify,ask});
   function activeButtons(){ $("#runAll").disabled=starting||!!running()||!accounts.some(a=>a.available); document.querySelectorAll("button.run,button.balance-refresh").forEach(b=>b.disabled=starting||!!running()||b.dataset.available!=="true"); }
   function action(label,actionName,account,cls=""){const button=node("button",cls,label);button.type="button";button.dataset.action=actionName;button.dataset.id=account.id;return button}
   function toggle(label,key,account){const wrap=node("label","toggle"),box=node("input");box.type="checkbox";box.checked=!!account[key];box.dataset.toggle=key;box.dataset.id=account.id;wrap.append(box,document.createTextNode(label));return wrap}
@@ -136,7 +186,7 @@
       if(last?.finishedAt)result.append(node("div","result-time",time(last.finishedAt)));
       const balance=node("div","balance-box"),balanceHead=node("div","balance-head"),snapshot=a.balance?.snapshot;
       balanceHead.append(node("span","","可用余额"+(a.balance?.state==="Stale"?" · 上次记录":"")));
-      if(!a.invalid&&a.siteType!=="AgentRouter"){const refresh=action("↻ 刷新余额","balance",a,"balance-refresh");refresh.dataset.available=String(!!a.available);balanceHead.append(refresh)}
+      if(!a.invalid){const refresh=action("↻ 刷新余额","balance",a,"balance-refresh");refresh.dataset.available=String(!!a.available);balanceHead.append(refresh)}
       const amount=node("div","balance-value");amount.append(node("strong","",snapshot?.amount??"—"),node("span","",snapshot?.unit??"尚未获取"));
       balance.append(balanceHead,amount);
       if(snapshot)balance.append(node("div","balance-note","更新于 "+time(snapshot.updatedAt)),node("div","balance-note","quota "+snapshot.quota));
@@ -144,12 +194,12 @@
       const schedule=node("div","card-schedule");schedule.append(node("span","",a.autoCheckIn?"◷ 每天 10:10 · UTC+8":"◷ 自动未开启"));
       const toggles=node("div","toggles");if(!a.invalid)toggles.append(toggle("已启用","enabled",a),toggle("自动签到","autoCheckIn",a));
       const buttons=node("div","card-actions"),run=action(a.siteType==="AgentRouter"?"登录并签到":"立即签到","run",a,"run");run.dataset.available=String(!!a.available);
-      buttons.append(run);if(!a.invalid)buttons.append(action("编辑","edit",a));buttons.append(action("删除","delete",a,"danger"));card.append(head,meta,balance,result,schedule,toggles,buttons);cards.append(card);
+      buttons.append(run);if(!a.invalid)buttons.append(action("令牌","tokens",a),action("编辑","edit",a));buttons.append(action("删除","delete",a,"danger"));card.append(head,meta,balance,result,schedule,toggles,buttons);cards.append(card);
     }activeButtons();
   }
   async function load(){
     $("#refresh").disabled=true;
-    try{const data=await api("GET","accounts");accounts=data.accounts||[];const active=(data.jobs||[]).find(j=>["Queued","Running"].includes(j.state));if(!job&&active){job=active;cancelRequested=false;renderJob();schedulePoll()}render()}
+    try{const data=await api("GET","accounts");accounts=data.accounts||[];tokens.setAccounts(accounts);const active=(data.jobs||[]).find(j=>["Queued","Running"].includes(j.state));if(!job&&active){job=active;cancelRequested=false;renderJob();schedulePoll()}render()}
     catch(error){notify(error.message||"读取账号失败",true);if(!accounts.length){const empty=node("div","empty");empty.append(node("strong","","读取账号失败"),node("p","",messageText(error.message||"宿主连接失败")));$("#cards").replaceChildren(empty)}}
     finally{$("#refresh").disabled=false}
   }
@@ -255,6 +305,7 @@
   $("#cards").addEventListener("click",async event=>{
     const button=event.target.closest("[data-action]");if(!button)return;const account=accounts.find(a=>a.id===button.dataset.id);if(!account)return;
     if(button.dataset.action==="edit"){openEditor(account);return}
+    if(button.dataset.action==="tokens"){tokens.open(account.id);return}
     if(button.dataset.action==="run"){await start([account.id]);return}
     if(button.dataset.action==="balance"){await startBalance(account);return}
     if(button.dataset.action==="delete"&&await ask("删除账号“"+account.label+"”？")){

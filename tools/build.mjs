@@ -3,6 +3,7 @@ import { build } from "esbuild";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { renderPage } from "./ui.mjs";
 
 /** @param {string} root
  * @param {string} file
@@ -61,13 +62,14 @@ export async function buildPlugin(project, destination) {
   for (const handler of handlers)
     if (!outputs[0].exports.includes(handler)) throw new Error(`Missing declared export: ${handler}`);
   const page = manifest.page?.entry ? await asset(root, manifest.page.entry, 1024 * 1024) : null;
+  const pageHtml = page ? await renderPage(root,page.data.toString("utf8")) : null;
   const packaged = { ...manifest, schemaVersion: 1, hostApi: manifest.hostApi ?? "1", format: "esm-bundle", entry: "server/plugin.mjs" };
   if (page) packaged.page = { ...manifest.page, entry: "ui/index.html" };
   await fs.mkdir(path.join(output, "server"), { recursive: true });
   await fs.writeFile(path.join(output, "server", "plugin.mjs"), contents);
   if (page) {
     await fs.mkdir(path.join(output, "ui"), { recursive: true });
-    await fs.writeFile(path.join(output, "ui", "index.html"), page.data);
+    await fs.writeFile(path.join(output, "ui", "index.html"), pageHtml);
   }
   await fs.writeFile(path.join(output, "plugin.json"), JSON.stringify(packaged, null, 2) + "\n");
   return output;

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
+import { renderPage } from "./ui.mjs";
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const out=path.join(root,"artifacts","preview");
 await fs.mkdir(out,{recursive:true});
@@ -35,9 +36,18 @@ const rows=[
   {id:"demo-6",label:"AgentRouter · 备用账号",siteType:"AgentRouter",baseUrl:"https://agentrouter.org",
     enabled:false,available:false,autoCheckIn:false,cookie:"",username:"demo2@example.test",password:"DEMO_ONLY",hasCookie:false,hasPassword:true}
 ].map(row=>({...defaults,...row}));
-const mock=`<script>window.Router2API={request:async(method,route,body)=>{if(route==="accounts")return{accounts:${JSON.stringify(rows)},jobs:[]};if(route==="schedule/preview")return{cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]};throw Error("离线演示不会执行签到")}};</script>`;
+const demoToken={id:"9007199254740993",name:"工作项目 · API",status:"1",group:"default",remain_quota:"9007199254740993",used_quota:"15000",
+  expired_time:"-1",unlimited_quota:false,model_limits_enabled:true,model_limits:["gpt-a"],allow_ips:"",revision:"demo",amount:null,usedAmount:null};
+const demoOptions={groups:[{value:"default",label:"默认分组"}],models:["gpt-a","gpt-b"],groupsLoaded:true,modelsLoaded:true,
+  currency:{unit:"USD",quotaPerUnit:"500000",rate:"1",revision:"demo"},errors:[]};
+const mock=`<script>window.Router2API={request:async(method,route,body)=>{
+  if(route==="accounts")return{accounts:${JSON.stringify(rows)},jobs:[]};
+  if(route.startsWith("tokens/list?"))return{page:1,total:null,hasNext:false,currency:null,items:[${JSON.stringify(demoToken)}]};
+  if(route.startsWith("tokens/detail?"))return{token:${JSON.stringify(demoToken)}};
+  if(route.startsWith("tokens/options?"))return ${JSON.stringify(demoOptions)};
+  if(route==="schedule/preview")return{cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]};throw Error("离线演示不会执行签到或令牌写入")}};</script>`;
 const version=JSON.parse(await fs.readFile(path.join(root,"plugin.json"),"utf8")).version;
-const html=(await fs.readFile(path.join(root,"ui/index.html"),"utf8")).replace("</head>",mock+"</head>").replace(`>v${version}<`,`>演示数据 · v${version}<`);
+const html=(await renderPage(root)).replace("</head>",mock+"</head>").replace(`>v${version}<`,`>演示数据 · v${version}<`);
 await fs.writeFile(path.join(out,"index.html"),html);
 await fs.writeFile(path.join(out,"sandbox.html"),`<!doctype html><meta charset="utf-8"><title>宿主沙箱离线测试</title>
 <iframe id="host" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>
@@ -98,7 +108,19 @@ try{
   assert.equal(await evaluate("'cron' in JSON.parse(document.querySelector('#jsonText').value)"),false);
   await screenshot("editor-json");
   await evaluate("document.querySelector('#closeEditor').click()");
+  await evaluate("document.querySelector('[data-action=\"tokens\"]').click()");
+  for(let i=0;i<100;i++){if(await evaluate("!!document.querySelector('.token-key')"))break;await wait(50)}
+  assert.equal(await evaluate("document.querySelector('.token-key').value"),"••••••••••••");
+  await noOverflow();await screenshot("tokens-desktop");
+  await evaluate("document.querySelector('[data-token-action=\"edit\"]').click()");
+  for(let i=0;i<100;i++){if(await evaluate("!document.querySelector('#tokenSave').disabled"))break;await wait(50)}
+  assert.equal(await evaluate("document.querySelector('#tokenForm [name=\"quotaValue\"]').value"),"18014398509.481986");
+  await screenshot("tokens-editor");
   await send("Emulation.setDeviceMetricsOverride",{width:430,height:1000,deviceScaleFactor:1,mobile:true});
+  await noOverflow();await screenshot("tokens-mobile-editor");
+  await evaluate("document.querySelector('#tokenCancel').click()");
+  await noOverflow();await screenshot("tokens-mobile");
+  await evaluate("document.querySelector('#accountsTab').click()");
   await noOverflow();await screenshot("mobile");
   await evaluate("document.querySelector('[data-action=\"edit\"]').click()");
   await noOverflow();await screenshot("mobile-editor");
@@ -145,7 +167,7 @@ try{
   assert.equal(JSON.parse(await fs.readFile(downloaded,"utf8")).cookie,"session=DEMO_ONLY");
   assert.equal(exceptions.length,0,"浏览器发生 JS 异常");
   await send("Browser.close",{},false);
-  console.log("Chromium 离线验证通过：桌面/430px 手机、双模式及五张截图；同宿主 iframe 内确认、弹窗导出和实际 JSON 下载。");
+  console.log("Chromium 离线验证通过：桌面/430px 手机、账号及令牌页面与编辑器；同宿主 iframe 内确认、弹窗导出和实际 JSON 下载。");
   console.log(out);
 }finally{
   socket?.close();

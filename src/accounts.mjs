@@ -4,6 +4,7 @@ import {
 } from "./common.mjs";
 import { legacySuccessDay } from "./uncertainty.mjs";
 import { SCHEDULE_LABEL } from "./cron.mjs";
+import { requireAgentSession } from "./balance.mjs";
 
 /** @param {import("./common.mjs").Context} ctx */
 export async function readAccount(ctx, accountId) {
@@ -70,6 +71,8 @@ export async function saveAccount(ctx) {
       delete fields.lastResult;
       delete fields.balance;
     }
+    if (!previous || sessionIdentity(ctx,previous.config) !== sessionIdentity(ctx,config))
+      delete fields.balanceSession;
     let saved;
     if (previous) {
       saved = await ctx.accounts.compareExchangeCredential(previous.account.id, previous.version, { kind: "Custom", fields });
@@ -93,16 +96,59 @@ function objectBalance(value) {
     && ["Fresh","Stale","Unknown"].includes(value.state);
 }
 /** @param {import("./common.mjs").Context} ctx */
+function sessionIdentity(ctx, config) {
+  return ctx.crypto.sha256(JSON.stringify([identity(ctx,config),config.route,config.userAgent]));
+}
+/** @param {import("./common.mjs").Context} ctx */
+export function readAgentSession(ctx, record, requestPath = null) {
+  let saved;
+  try { saved = JSON.parse(record.credential.fields.balanceSession || "null"); } catch { }
+  return requireAgentSession(saved?.identity === sessionIdentity(ctx,record.config) ? saved : null,requestPath);
+}
+/** @param {import("./common.mjs").Context} ctx */
+export async function persistAgentSession(ctx, record, session) {
+  if (session) requireAgentSession(session);
+  const binding = sessionIdentity(ctx,record.config);
+  for (let i = 0; i < 3; i++) {
+    const current = await readAccount(ctx,record.account.id);
+    if (sessionIdentity(ctx,current.config) !== binding)
+      throw new InputError(409,"账号认证或网络配置变化，未保存旧会话");
+    const fields = {...current.credential.fields};
+    if (session) fields.balanceSession = JSON.stringify({
+      identity:binding,cookie:session.cookie,userId:session.userId,expiresAt:session.expiresAt,
+      ...(session.cookiePath ? {cookiePath:session.cookiePath} : {})
+    });
+    else delete fields.balanceSession;
+    if (await ctx.accounts.compareExchangeCredential(current.account.id,current.version,{kind:"Custom",fields}))
+      return fields.balanceSession;
+  }
+  throw new InputError(409,"登录会话保存发生并发冲突，未重新登录");
+}
+/** @param {import("./common.mjs").Context} ctx */
+export async function forgetAgentSession(ctx, record) {
+  for(let i=0;i<3;i++){
+    const current=await readAccount(ctx,record.account.id);
+    if(current.credential.fields.balanceSession!==record.credential.fields.balanceSession)return;
+    const fields={...current.credential.fields};delete fields.balanceSession;
+    if(await ctx.accounts.compareExchangeCredential(current.account.id,current.version,{kind:"Custom",fields}))return;
+  }
+  throw new InputError(409,"会话清理发生并发冲突");
+}
+/** @param {import("./common.mjs").Context} ctx */
 export async function persistBalance(ctx, record, update) {
   for (let i = 0; i < 3; i++) {
     const current = await readAccount(ctx, record.account.id);
     if (identity(ctx,current.config) !== identity(ctx,record.config))
       throw new InputError(409, "认证身份变化，未保存旧余额");
     const previous = balanceData(current.credential.fields);
-    const balance = update.snapshot
-      ? { state: "Fresh", ...update }
-      : { state: previous?.snapshot ? "Stale" : "Unknown", snapshot: previous?.snapshot ?? null, ...update };
+    const {authExpired, ...value} = update;
+    const balance = value.snapshot
+      ? { state: "Fresh", ...value }
+      : { state: previous?.snapshot ? "Stale" : "Unknown", snapshot: previous?.snapshot ?? null, ...value };
+    /** @type {Record<string, string | null>} */
     const fields = { ...current.credential.fields, balance: JSON.stringify(balance) };
+    if (authExpired && fields.balanceSession === record.credential.fields.balanceSession)
+      delete fields.balanceSession;
     if (await ctx.accounts.compareExchangeCredential(current.account.id,current.version,{kind:"Custom",fields})) return balance;
   }
   throw new InputError(409, "余额保存发生并发冲突，未重发请求");

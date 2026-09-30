@@ -1,14 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { renderPage } from "./tools/ui.mjs";
 import { JSDOM } from "jsdom";
-const html=await fs.readFile(new URL("./ui/index.html",import.meta.url),"utf8");
+const html=await renderPage(fileURLToPath(new URL(".",import.meta.url)));
 const account=(overrides={})=>({
   id:"a",version:"1",label:"日常站点",siteType:"NewAPI",baseUrl:"https://new.example",enabled:true,available:true,
   autoCheckIn:true,route:"direct",cookie:"session=COOKIE_SECRET",userId:"123",username:"",password:"",
   hasCookie:true,hasPassword:false,userAgent:"",lastResult:null,lastSuccessDay:null,...overrides
 });
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+const tokenRow=(overrides={})=>({
+  id:"9007199254740993",name:"工作密钥",status:"1",group:"default",remain_quota:"9007199254740993",
+  used_quota:"0",expired_time:"-1",unlimited_quota:false,model_limits_enabled:false,
+  model_limits:[],allow_ips:"",revision:"revision",amount:null,usedAmount:null,...overrides
+});
+const tokenSettings=(overrides={})=>({
+  groups:[{value:"default",label:"默认"}],models:["gpt-a","gpt-b"],groupsLoaded:true,modelsLoaded:true,
+  currency:{unit:"USD",quotaPerUnit:"500000",rate:"1",revision:"currency"},errors:[],...overrides
+});
+function tokenMock(overrides={}){
+  return async(method,route,body)=>{
+    if(overrides.handler){const result=await overrides.handler(method,route,body);if(result!==undefined)return result}
+    if(route.startsWith("tokens/list?"))return {page:1,total:null,hasNext:false,currency:null,items:[tokenRow(overrides.token)]};
+    if(route.startsWith("tokens/detail?"))return {token:tokenRow(overrides.token)};
+    if(route.startsWith("tokens/options?"))return tokenSettings(overrides.settings);
+    if(route==="tokens/key")return {key:"sk-DOM_TEST_SECRET"};
+    if(["tokens/create","tokens/update","tokens/status","tokens/delete"].includes(route))return {success:true,message:"已完成"};
+  };
+}
 async function until(predicate){for(let i=0;i<60;i++){if(predicate())return;await tick()}assert.ok(predicate(),"异步 UI 条件未达成")}
 async function page(t, rows=[],handler){
   const calls=[],blobs=[];
@@ -34,6 +54,103 @@ async function page(t, rows=[],handler){
   const $=s=>dom.window.document.querySelector(s);
   return{dom,$,calls,blobs,click:s=>$(s).click(),event:(target,name)=>target.dispatchEvent(new dom.window.Event(name,{bubbles:true,cancelable:true}))};
 }
+test("令牌独立页面与快捷入口；密钥按需显示复制，切账号和离页清空",async t=>{
+  const p=await page(t,[account(),account({id:"b",siteType:"AnyRouter"}),account({id:"c",siteType:"AgentRouter"})],tokenMock());
+  const copied=[];
+  Object.defineProperty(p.dom.window.navigator,"clipboard",{value:{writeText:async value=>copied.push(value)}});
+  p.click('[data-action="tokens"]');await until(()=>!!p.$(".token-key"));
+  assert.equal(p.$("#accountsPage").hidden,true);assert.equal(p.$("#tokenAccount").options.length,3);
+  assert.equal(p.calls.some(c=>c.route==="tokens/key"),false);
+  assert.match(p.$(".token-key").value,/•/);
+  p.click('[data-token-action="show"]');await until(()=>p.$(".token-key").value.startsWith("sk-"));
+  p.click('[data-token-action="copy"]');await until(()=>copied.length===1);
+  assert.equal(copied[0],"sk-DOM_TEST_SECRET");assert.equal(p.calls.filter(c=>c.route==="tokens/key").length,1);
+  Object.defineProperty(p.dom.window.document,"hidden",{configurable:true,value:true});
+  p.event(p.dom.window.document,"visibilitychange");
+  assert.match(p.$(".token-key").value,/•/);assert.equal(p.$('[data-token-action="show"]').textContent,"显示");
+  p.$("#tokenAccount").value="b";p.event(p.$("#tokenAccount"),"change");
+  await until(()=>!!p.$(".token-key"));assert.match(p.$(".token-key").value,/•/);
+  assert.ok(p.calls.some(c=>c.route.includes("accountId=b")));
+  p.click("#accountsTab");assert.equal(p.$("#tokensPage").hidden,true);assert.equal(p.$(".token-key"),null);
+});
+test("令牌旧账号迟到的列表和密钥响应不能污染新账号",async t=>{
+  let resolveList,resolveKey,first=true;
+  const p=await page(t,[account(),account({id:"b"})],tokenMock({handler:async(method,route)=>{
+    if(route.startsWith("tokens/list?")&&route.includes("accountId=a")&&first){first=false;return new Promise(r=>resolveList=r)}
+    if(route==="tokens/key")return new Promise(r=>resolveKey=r);
+  }}));
+  p.click("#tokensTab");await until(()=>!!resolveList);
+  p.$("#tokenAccount").value="b";p.event(p.$("#tokenAccount"),"change");await until(()=>!!p.$(".token-key"));
+  resolveList({page:1,total:null,hasNext:false,items:[tokenRow({name:"过时列表"})]});await tick();
+  assert.doesNotMatch(p.$("#tokenList").textContent,/过时列表/);
+  p.click('[data-token-action="show"]');await until(()=>!!resolveKey);
+  p.$("#tokenAccount").value="a";p.event(p.$("#tokenAccount"),"change");await until(()=>!!p.$(".token-key"));
+  resolveKey({key:"sk-STALE_SECRET"});await tick();assert.match(p.$(".token-key").value,/•/);
+});
+test("令牌新建精确转换、UTC+8、IP 与模型验证；提交防重且不自动读取密钥",async t=>{
+  let resolveCreate;
+  const p=await page(t,[account()],tokenMock({handler:async(method,route)=>route==="tokens/create"?new Promise(r=>resolveCreate=r):undefined}));
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click("#tokenAdd");
+  await until(()=>!p.$("#tokenSave").disabled);
+  const field=name=>p.$(`#tokenForm [name="${name}"]`);
+  field("name").value="新令牌";field("quotaValue").value="18014398509.481986";p.event(field("quotaValue"),"input");
+  field("quotaMode").value="quota";p.event(field("quotaMode"),"change");assert.equal(field("quotaValue").value,"9007199254740993");
+  field("quotaMode").value="amount";p.event(field("quotaMode"),"change");assert.equal(field("quotaValue").value,"18014398509.481986");
+  field("neverExpires").checked=false;p.event(field("neverExpires"),"change");field("expires").value="2099-01-01T08:00";
+  field("allow_ips").value="999.1.1.1";p.event(p.$("#tokenForm"),"submit");assert.match(p.$("#tokenFormError").textContent,/IP/);
+  field("allow_ips").value="::1\n10.0.0.0/8";field("model_limits_enabled").checked=true;p.event(field("model_limits_enabled"),"change");
+  p.event(p.$("#tokenForm"),"submit");assert.match(p.$("#tokenFormError").textContent,/至少/);
+  p.$("#tokenModels input").click();p.event(p.$("#tokenForm"),"submit");p.event(p.$("#tokenForm"),"submit");
+  await until(()=>!!resolveCreate);
+  const writes=p.calls.filter(c=>c.route==="tokens/create");assert.equal(writes.length,1);
+  assert.equal(writes[0].body.quota.value,"18014398509.481986");
+  assert.equal(writes[0].body.changes.expired_time,String(Date.parse("2099-01-01T00:00:00Z")/1000));
+  assert.deepEqual(writes[0].body.changes.model_limits,["gpt-a"]);
+  p.click("#tokenCancel");assert.equal(p.$("#tokenEditor").open,true);
+  resolveCreate({success:true,message:"已创建"});await until(()=>!p.$("#tokenEditor").open);
+  assert.equal(p.calls.some(c=>c.route==="tokens/key"),false);
+});
+test("编辑保留不可用分组和模型、旧 IP，未改额度不提交；选项失败不清配置",async t=>{
+  const p=await page(t,[account()],tokenMock({
+    token:{group:"retired",model_limits:["retired-model"],model_limits_enabled:true,allow_ips:"legacy-format"},
+    settings:{groups:[],models:[],groupsLoaded:false,modelsLoaded:false,errors:["选项加载失败"]}
+  }));
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="edit"]');
+  await until(()=>!p.$("#tokenSave").disabled);
+  const field=name=>p.$(`#tokenForm [name="${name}"]`);
+  assert.equal(field("group").value,"retired");assert.equal(field("group").disabled,true);
+  assert.equal(p.$("#tokenModels input").checked,true);assert.equal(p.$("#tokenModels input").disabled,true);
+  field("name").value="改名";p.event(p.$("#tokenForm"),"submit");
+  await until(()=>p.calls.some(c=>c.route==="tokens/update"));
+  const body=p.calls.find(c=>c.route==="tokens/update").body;
+  assert.deepEqual(body.changes,{name:"改名"});assert.equal(body.quota,undefined);
+  assert.equal(body.tokenId,"9007199254740993");assert.equal(body.revision,"revision");
+});
+test("删除必须确认；启停只提交状态，待核对重复点击复用操作 ID",async t=>{
+  const p=await page(t,[account()],tokenMock({handler:async(method,route)=>{
+    if(route==="tokens/status")throw Error("此写请求结果待核对");
+  }}));
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="delete"]');
+  assert.equal(p.$("#confirmation").open,true);p.click("#rejectConfirm");await tick();
+  assert.equal(p.calls.some(c=>c.route==="tokens/delete"),false);
+  p.click('[data-token-action="delete"]');p.click("#acceptConfirm");await until(()=>p.calls.some(c=>c.route==="tokens/delete"));
+  await until(()=>!p.$("#tokenRefresh").disabled);p.click('[data-token-action="status"]');
+  await until(()=>p.$("#tokenPageError").textContent.includes("待核对"));p.click('[data-token-action="status"]');await tick();
+  const writes=p.calls.filter(c=>c.route==="tokens/status");assert.equal(writes.length,2);
+  assert.equal(writes[0].body.operationId,writes[1].body.operationId);assert.equal(writes[0].body.status,"2");
+  assert.equal(writes[0].body.changes,undefined);
+});
+test("关闭编辑器或切换账号后忽略迟到的详情与选项",async t=>{
+  let resolveOptions;
+  const p=await page(t,[account(),account({id:"b"})],tokenMock({handler:async(method,route)=>{
+    if(route.startsWith("tokens/options?"))return new Promise(r=>resolveOptions=r);
+  }}));
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="edit"]');
+  await until(()=>!!resolveOptions);p.click("#tokenCancel");
+  p.$("#tokenAccount").value="b";p.event(p.$("#tokenAccount"),"change");
+  resolveOptions(tokenSettings());await tick();
+  assert.equal(p.$("#tokenEditor").open,false);assert.equal(p.$('#tokenForm [name="name"]').value,"");
+});
 test("漂亮空态、统计与账号筛选使用真实 DOM，外部文字不注入 HTML",async t=>{
   const p=await page(t,[account({label:'<img src=x onerror="alert(1)">'}),account({id:"b",siteType:"AgentRouter",cookie:"",password:"PASSWORD",hasPassword:true})]);
   assert.equal(p.$("#statTotal").textContent,"2");assert.equal(p.$("#cards").querySelectorAll("img").length,0);
@@ -117,21 +234,22 @@ test("统一时间预览不执行签到；余额开关仍支持 JSON 双向同�
   assert.equal(p.calls.filter(c=>c.route==="checkin/start"||c.route==="balance/start").length,0);
   p.click("#visualTab");assert.equal(p.$('[name="queryBalance"]').checked,false);
 });
-test("余额卡显示精确字符串/旧数据/未知，不把未知当成零；Agent 无隐含登录按钮",async t=>{
+test("余额卡显示精确字符串/旧数据/未知，不把未知当成零；Agent 同样显示刷新按钮",async t=>{
   const p=await page(t,[account({balance:{state:"Stale",error:"上游限流",snapshot:{amount:"180143985094819.862468",unit:"USD",quota:"90071992547409931234",note:"精确金额",updatedAt:"2026-09-29T00:00:00Z"}}}),
     account({id:"b",siteType:"AgentRouter"})]);
   assert.match(p.$("#cards").textContent,/180143985094819\.862468/);
   assert.match(p.$("#cards").textContent,/上次记录/);assert.match(p.$("#cards").textContent,/上游限流/);
   assert.equal(p.$('[data-account="b"] .balance-value strong').textContent,"—");
-  assert.equal(p.$('[data-account="b"] [data-action="balance"]'),null);
+  assert.ok(p.$('[data-account="b"] [data-action="balance"]'));
 });
-test("余额单独刷新入队，防重复点击且不调用签到接口",async t=>{
+for(const siteType of ["NewAPI","AnyRouter","AgentRouter"])test(`${siteType} 余额单独刷新入队，防重复点击且不调用签到接口`,async t=>{
   let resolve;
-  const p=await page(t,[account()],async(_,route)=>{
+  const p=await page(t,[account({siteType})],async(_,route)=>{
     if(route==="balance/start")return new Promise(r=>resolve=r);
   });
   p.click('[data-action="balance"]');p.click('[data-action="balance"]');
   assert.equal(p.calls.filter(c=>c.route==="balance/start").length,1);
+  assert.deepEqual(p.calls.find(c=>c.route==="balance/start").body,{id:"a"});
   assert.equal(p.$('[data-action="run"]').disabled,true);
   resolve({id:"balance-job",name:"js-checkin-balance",state:"Queued"});await until(()=>!p.$("#jobPanel").hidden);
   assert.match(p.$("#jobTitle").textContent,/余额查询/);
@@ -157,7 +275,7 @@ test("页面仅保留功能文案，账号编辑与 JSON 均没有附注提示",
   const p=await page(t,[account()]);
   const copy=()=>{const root=p.dom.window.document.body.cloneNode(true);root.querySelectorAll("script,style").forEach(e=>e.remove());return root.textContent};
   assert.equal(p.$(".hero h1").textContent,"中转站签到");
-  assert.equal(p.$(".hero p").textContent,"账号管理、自动签到、余额查询");
+  assert.equal(p.$(".hero p").textContent,"账号管理、自动签到、余额查询、API 令牌");
   assert.equal(p.$(".footer"),null);assert.equal(p.$("#providerHint"),null);
   p.click('[data-action="edit"]');assert.equal(p.$("#editorTitle").textContent,"账号编辑");
   assert.equal(p.$("#jsonTab").textContent,"JSON");assert.equal(p.$("#cronPreview").textContent,"");
