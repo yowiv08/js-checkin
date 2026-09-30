@@ -42,8 +42,8 @@
 </head>
 <body>
 <main class="app">
-  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.1.1</span></header>
-  <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询</p></div><div class="schedule"><small><span class="live"></span>默认签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.1.2</span></header>
+  <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询</p></div><div class="schedule"><small><span class="live"></span>统一签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
   <section class="stats" aria-label="账号概况">
     <div class="stat"><div><span class="stat-label">全部账号</span><strong id="statTotal">0</strong></div><span class="stat-icon">▦</span></div>
     <div class="stat"><div><span class="stat-label">今日已确认</span><strong id="statSuccess">0</strong></div><span class="stat-icon">✓</span></div>
@@ -73,14 +73,11 @@
         <label class="field agent-field" hidden><span>用户名或邮箱</span><input name="username" autocomplete="off"></label>
         <label class="field agent-field" hidden><span>密码</span><input name="password" type="text" autocomplete="off" spellcheck="false"></label>
         <label class="field wide"><span>网络路线</span><select name="route"><option value="direct">直连</option><option value="pool">代理池</option></select></label>
-        <section class="cron-settings wide" aria-label="自动签到时间">
-          <label class="field"><span>Cron <small>UTC+8</small></span><input name="cron" value="0 10 10 * * *" spellcheck="false" placeholder="0 10 10 * * *"><small>支持五字段或六字段，秒位为 0。</small></label>
-          <div class="cron-presets"><span>每日时间</span><input id="dailyTime" type="time" value="10:10" aria-label="每日签到时间"><button type="button" id="applyTime">应用时间</button><button type="button" id="resetCron">恢复 10:10</button></div>
-        </section>
+        <div class="field wide"><span>统一自动签到时间</span><span>每天 10:10 · UTC+8</span></div>
         <div class="form-switches wide"><label class="toggle"><input type="checkbox" name="enabled" checked>启用账号</label><label class="toggle"><input type="checkbox" name="autoCheckIn">自动签到</label><label class="toggle"><input type="checkbox" name="queryBalance" checked>签到后更新余额</label></div>
       </section>
       <section id="jsonEditor" hidden><textarea id="jsonText" class="json-editor" aria-label="JSON 账号配置" spellcheck="false"></textarea></section>
-      <div class="schedule-preview"><button type="button" id="previewCron">预览下次时间</button><output id="cronPreview" aria-live="polite"></output></div>
+      <div class="schedule-preview"><button type="button" id="previewCron">查看统一签到时间</button><output id="cronPreview" aria-live="polite"></output></div>
       <label class="approval"><input type="checkbox" name="approveOrigin"><span>授权访问此站点</span></label>
       <p id="formError" class="error" role="alert"></p>
     </div>
@@ -98,7 +95,7 @@
 (() => {
   "use strict";
   const $ = selector => document.querySelector(selector), form = $("#accountForm"), editor = $("#editor");
-  const fields = ["label","siteType","baseUrl","cookie","userId","userAgent","username","password","route","enabled","autoCheckIn","cron","queryBalance"];
+  const fields = ["label","siteType","baseUrl","cookie","userId","userAgent","username","password","route","enabled","autoCheckIn","queryBalance"];
   const names = {NewAPI:"New API",AnyRouter:"AnyRouter",AgentRouter:"AgentRouter"};
   const defaults = {NewAPI:"",AnyRouter:"https://anyrouter.top",AgentRouter:"https://agentrouter.org"};
   const statuses = {Success:"签到成功",Already:"今日已签到",Skipped:"已跳过",AuthExpired:"认证失效",Challenge:"需要人机验证",RateLimited:"请求限流",Failed:"签到失败",Uncertain:"结果不确定"};
@@ -144,7 +141,7 @@
       balance.append(balanceHead,amount);
       if(snapshot)balance.append(node("div","balance-note","更新于 "+time(snapshot.updatedAt)),node("div","balance-note","quota "+snapshot.quota));
       if(a.balance?.error)balance.append(node("div","balance-note stale",messageText(a.balance.error)));
-      const schedule=node("div","card-schedule");schedule.append(node("span","",a.autoCheckIn?"◷ 自动 · UTC+8":"◷ 自动未开启"),node("code","",a.cron||"0 10 10 * * *"));
+      const schedule=node("div","card-schedule");schedule.append(node("span","",a.autoCheckIn?"◷ 每天 10:10 · UTC+8":"◷ 自动未开启"));
       const toggles=node("div","toggles");if(!a.invalid)toggles.append(toggle("已启用","enabled",a),toggle("自动签到","autoCheckIn",a));
       const buttons=node("div","card-actions"),run=action(a.siteType==="AgentRouter"?"登录并签到":"立即签到","run",a,"run");run.dataset.available=String(!!a.available);
       buttons.append(run);if(!a.invalid)buttons.append(action("编辑","edit",a));buttons.append(action("删除","delete",a,"danger"));card.append(head,meta,balance,result,schedule,toggles,buttons);cards.append(card);
@@ -156,13 +153,14 @@
     catch(error){notify(error.message||"读取账号失败",true);if(!accounts.length){const empty=node("div","empty");empty.append(node("strong","","读取账号失败"),node("p","",messageText(error.message||"宿主连接失败")));$("#cards").replaceChildren(empty)}}
     finally{$("#refresh").disabled=false}
   }
-  function emptyConfig(){return{label:"",siteType:"NewAPI",baseUrl:"",cookie:"",userId:"",userAgent:"",username:"",password:"",route:"direct",enabled:true,autoCheckIn:false,cron:"0 10 10 * * *",queryBalance:true}}
+  function emptyConfig(){return{label:"",siteType:"NewAPI",baseUrl:"",cookie:"",userId:"",userAgent:"",username:"",password:"",route:"direct",enabled:true,autoCheckIn:false,queryBalance:true}}
   function configOf(account){const value=emptyConfig();for(const key of fields)if(account?.[key]!==undefined)value[key]=account[key];return value}
   function setVisual(value){for(const key of fields){const field=form.elements.namedItem(key);if(field.type==="checkbox")field.checked=value[key];else field.value=value[key]??""}showProvider()}
   function visual(){const value={};for(const key of fields){const field=form.elements.namedItem(key);value[key]=field.type==="checkbox"?field.checked:field.value}return value}
   function parseConfig(text){
     let value;try{value=JSON.parse(text)}catch{throw Error("JSON 语法错误，请检查引号、逗号和括号")}
     if(!value||typeof value!=="object"||Array.isArray(value))throw Error("请导入单账号 JSON 对象");
+    delete value.cron;
     const unknown=Object.keys(value).filter(key=>!fields.includes(key));if(unknown.length)throw Error("包含不支持的配置字段："+unknown.join("、"));
     const merged={...emptyConfig(),...value};if(!names[merged.siteType])throw Error("siteType 只能是 NewAPI、AnyRouter 或 AgentRouter");
     for(const key of fields){if(typeof merged[key]!==(["enabled","autoCheckIn","queryBalance"].includes(key)?"boolean":"string"))throw Error(key+" 类型不正确")}
@@ -182,7 +180,6 @@
   function validate(value){
     if(!value.label.trim())throw Error("请填写账号备注");
     if(!/^https:\/\//i.test(value.baseUrl.trim()))throw Error("请填写 HTTPS 站点地址");
-    if(!value.cron.trim())throw Error("请填写 Cron 表达式");
     if(value.siteType==="AgentRouter"){if(!value.username.trim())throw Error("请填写用户名或邮箱");if(!value.password&&!editing?.hasPassword)throw Error("请填写密码")}
     else{if(!/^[1-9]\d{0,39}$/.test(value.userId))throw Error("User ID 必须是正整数字符串");if(!value.cookie&&!editing?.hasCookie)throw Error("请填写 Cookie")}
   }
@@ -197,12 +194,9 @@
   form.elements.baseUrl.addEventListener("input",()=>form.elements.approveOrigin.checked=false);
   let previewRevision=0;
   function clearPreview(){previewRevision++;$("#cronPreview").textContent=""}
-  form.elements.cron.addEventListener("input",clearPreview);$("#jsonText").addEventListener("input",clearPreview);
-  $("#applyTime").onclick=()=>{const match=/^(\d{2}):(\d{2})$/.exec($("#dailyTime").value);if(!match)return;form.elements.cron.value=`0 ${Number(match[2])} ${Number(match[1])} * * *`;clearPreview()};
-  $("#resetCron").onclick=()=>{form.elements.cron.value="0 10 10 * * *";$("#dailyTime").value="10:10";clearPreview()};
   $("#previewCron").onclick=async()=>{
     const revision=++previewRevision;$("#previewCron").disabled=true;
-    try{const data=await api("POST","schedule/preview",{cron:current().cron});if(revision!==previewRevision)return;$("#cronPreview").textContent="UTC+8 · "+data.cron+"\n"+(data.next?.length?data.next.map(at=>new Date(at).toLocaleString("zh-CN",{hour12:false,timeZone:"Asia/Shanghai"})).join("  /  "):data.warning)}
+    try{const data=await api("POST","schedule/preview",{});if(revision!==previewRevision)return;$("#cronPreview").textContent="每天 10:10 · UTC+8\n"+data.next.map(at=>new Date(at).toLocaleString("zh-CN",{hour12:false,timeZone:"Asia/Shanghai"})).join("  /  ")}
     catch(error){if(revision===previewRevision)$("#cronPreview").textContent=messageText(error.message||"预览失败")}
     finally{$("#previewCron").disabled=false}
   };

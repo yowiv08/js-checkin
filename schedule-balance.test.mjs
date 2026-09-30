@@ -1,11 +1,54 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {parseCron,cronMatches,nextRuns,DEFAULT_CRON} from "./src/cron.mjs";
+import {parseCron,cronMatches,nextRuns,DEFAULT_CRON,dailySlot} from "./src/cron.mjs";
 import {configFrom,decode,day,acquire,accountLock} from "./src/common.mjs";
 import {runOne,refreshBalance} from "./src/runner.mjs";
-import {readAccount,persistBalance} from "./src/accounts.mjs";
+import {blocksUncertain} from "./src/uncertainty.mjs";
+import {readAccount,persistBalance,card} from "./src/accounts.mjs";
 import {exactJson,agentSession} from "./src/balance.mjs";
 import * as plugin from "./src/plugin.mjs";
+
+test("AnyRouter 已接收空消息仅阻止当天，不永久封锁次日 Cron",async t=>{
+  t.mock.timers.enable({apis:["Date"],now:Date.parse("2026-09-29T15:59:00Z")});
+  const f=fixture(),a=f.seed("AnyRouter",{cron:"* * * * *"});
+  const previous={status:"Uncertain",httpStatus:200,message:'{"message":"","success":true}',
+    startedAt:"2026-09-29T15:58:00Z",finishedAt:"2026-09-29T15:58:01Z"};
+  a.credential.fields.lastResult=JSON.stringify(previous);
+  const view=card(await readAccount(f.ctx(),a.id));
+  assert.equal(view.lastResult.status,"Success");
+  assert.equal(view.lastResult.message,previous.message);
+  assert.equal(view.lastSuccessDay,"2026-09-29");
+  await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,0);
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");assert.equal(f.calls.length,0);
+  t.mock.timers.setTime(Date.parse("2026-09-29T16:00:00Z"));
+  await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,0);
+  t.mock.timers.setTime(Date.parse("2026-09-30T02:10:00Z"));
+  await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,1);
+  f.handler=async spec=>spec.method==="POST"?response({success:true,message:""}):response({success:true});
+  const job=[...f.jobs.values()][0];
+  const out=await plugin.checkInJob(f.ctx(),job.input);
+  assert.equal(out.results[0].status,"Success");
+  assert.equal(f.calls.filter(c=>c.method==="POST").length,1);
+  assert.equal(a.credential.fields.lastSuccessDay,"2026-09-30");
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");
+  assert.equal(f.calls.filter(c=>c.method==="POST").length,1);
+});
+
+test("跨日仍阻止超时、中断、异常正文、缺失或未来时间及其他站点",()=>{
+  const now=Date.parse("2026-09-30T02:10:00Z");
+  const base={status:"Uncertain",httpStatus:200,message:'{"message":"","success":true}',
+    startedAt:"2026-09-29T02:10:00Z",finishedAt:"2026-09-29T02:10:01Z"};
+  const blocked=(changes={},siteType="AnyRouter")=>blocksUncertain({siteType},
+    {lastResult:JSON.stringify({...base,...changes})},now);
+  assert.equal(blocked(),false);
+  for(const change of [{httpStatus:null},{httpStatus:500},{message:"timeout"},
+    {message:'{"success":false,"message":""}'},{message:'{"success":true,"message":"","error":"x"}'},
+    {message:'{"success":true}'},{startedAt:undefined},{finishedAt:undefined},
+    {finishedAt:"invalid"},{finishedAt:"2026-09-28T02:10:00Z"},
+    {finishedAt:"2026-10-01T00:00:00Z"},{finishedAt:"2026-09-30T00:00:00Z"}])
+    assert.equal(blocked(change),true,JSON.stringify(change));
+  for(const siteType of ["NewAPI","AgentRouter"])assert.equal(blocked({},siteType),true);
+});
 import {fixture,response,cancellation} from "./test-host.mjs";
 
 test("Cron 默认/五六字段/UTC+8/列表范围步长和星期日 7",()=>{
@@ -28,17 +71,23 @@ test("Cron 预览严格在将来、跨天、闰年、无效日有界返回",()=>
   assert.deepEqual(nextRuns("0 0 29 2 *",Date.parse("2026-09-29T00:00:00Z"),1),["2028-02-28T16:00:00.000Z"]);
   assert.deepEqual(nextRuns("0 0 31 2 *"),[]);
 });
-test("旧配置迁移 Cron / 默认查询余额；预览/保存/校验没有远端请求",async()=>{
+test("旧 Cron 忽略并在保存时移除；预览始终统一时间且不请求站点",async()=>{
   const f=fixture(),a=f.seed(),stored=JSON.parse(a.credential.fields.config);
   delete stored.cron;delete stored.queryBalance;a.credential.fields.config=JSON.stringify(stored);
-  const c=decode(f.ctx(),a.credential);assert.equal(c.cron,DEFAULT_CRON);assert.equal(c.queryBalance,true);
+  const c=decode(f.ctx(),a.credential);assert.equal(c.cron,undefined);assert.equal(c.queryBalance,true);
   const preview=await plugin.previewSchedule(f.ctx({cron:"30 9 * * 1-5"}));
   assert.equal(preview.statusCode,200);assert.equal(preview.body.next.length,3);
-  assert.equal((await plugin.previewSchedule(f.ctx({cron:"bad"}))).statusCode,400);
+  assert.equal(preview.body.cron,DEFAULT_CRON);
+  assert.equal((await plugin.previewSchedule(f.ctx({cron:"bad"}))).body.cron,DEFAULT_CRON);
   const out=await plugin.saveAccount(f.ctx({id:a.id,version:"1",cron:"30 9 * * *",queryBalance:false}));
-  assert.equal(out.body.account.cron,"0 30 9 * * *");assert.equal(out.body.account.queryBalance,false);
+  assert.equal(out.body.account.cron,undefined);assert.equal(out.body.account.queryBalance,false);
+  assert.equal(JSON.parse(a.credential.fields.config).cron,undefined);
   assert.equal(f.calls.length,0);
-  assert.throws(()=>configFrom(f.ctx(),{...stored,cron:"invalid"}));
+  assert.equal(configFrom(f.ctx(),{...stored,cron:"invalid"}).cron,undefined);
+  for(const legacy of ["* * * * *","invalid",null,123]) {
+    a.credential.fields.config=JSON.stringify({...stored,cron:legacy});
+    assert.equal(decode(f.ctx(),a.credential).cron,undefined);
+  }
 });
 test("默认 10:10 才入队，重复/多实例同一 slot 不重复；ticker 不运行 HTTP",async t=>{
   let clock=Date.parse("2026-09-29T02:09:00Z");t.mock.method(Date,"now",()=>clock);
@@ -50,9 +99,41 @@ test("默认 10:10 才入队，重复/多实例同一 slot 不重复；ticker �
   assert.doesNotMatch(JSON.stringify(job.input),/COOKIE_SECRET|PASSWORD_SECRET|username|cookie/);
   job.state="Completed";await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,1);
 });
-test("自动 job 排队期间修改 Cron / 认证 / 开关或过期会跳过",async t=>{
-  let clock=Date.now();t.mock.method(Date,"now",()=>clock);
-  for(const changed of [{cron:"0 1 1 * * *"},{cookie:"session=NEW"},{autoCheckIn:false},{enabled:false},null]){
+test("统一时间忽略不同旧 Cron；迟到调度与旧分钟任务复用当天 slot",async t=>{
+  const due=Date.parse("2026-09-30T02:10:00Z");
+  let clock=due-60000;t.mock.method(Date,"now",()=>clock);
+  const f=fixture();
+  for(const cron of ["0 0 9 * * *","* * * * *","bad"])f.seed("NewAPI",{cron});
+  assert.equal(dailySlot(clock),null);
+  await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,0);
+  clock=due+65000;
+  await plugin.dailyCheckIn(f.ctx());
+  assert.equal(f.jobs.size,1);
+  const job=[...f.jobs.values()][0];
+  assert.equal(job.input.slot,due);assert.equal(job.input.ids.length,3);
+  clock=due+10*60000;
+  await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,1);
+  assert.equal(dailySlot(due+1800000),due);
+  assert.equal(dailySlot(due+1800001),null);
+  clock=due+86400000;
+  await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,2);
+});
+test("旧 Cron 编辑不改变统一计划摘要；非统一时间的旧排队任务不执行",async t=>{
+  const due=Date.parse("2026-09-30T02:10:00Z");
+  t.mock.timers.enable({apis:["Date"],now:due});
+  const f=fixture(),a=f.seed("NewAPI",{cron:"* * * * *"});
+  await plugin.dailyCheckIn(f.ctx());
+  const job=[...f.jobs.values()][0];
+  const stored=JSON.parse(a.credential.fields.config);
+  a.credential.fields.config=JSON.stringify({...stored,cron:"0 0 1 * * *"});
+  const invalid=await plugin.checkInJob(f.ctx(),{...job.input,slot:due-60000});
+  assert.equal(invalid.results[0].status,"Skipped");assert.equal(f.calls.length,0);
+  const valid=await plugin.checkInJob(f.ctx(),job.input);
+  assert.equal(valid.results[0].status,"Success");assert.equal(f.calls.length,1);
+});
+test("自动 job 排队期间修改认证 / 开关或过期会跳过",async t=>{
+  let clock=Date.parse("2026-09-30T02:10:00Z");t.mock.method(Date,"now",()=>clock);
+  for(const changed of [{cookie:"session=NEW"},{autoCheckIn:false},{enabled:false},null]){
     const f=fixture(),a=f.seed("NewAPI",{cron:"* * * * *"});await plugin.dailyCheckIn(f.ctx());
     const job=[...f.jobs.values()][0];assert.ok(job);
     if(changed){const stored=JSON.parse(a.credential.fields.config);a.credential.fields.config=JSON.stringify({...stored,...changed})}
@@ -60,7 +141,8 @@ test("自动 job 排队期间修改 Cron / 认证 / 开关或过期会跳过",as
     const out=await plugin.checkInJob(f.ctx(),job.input);assert.equal(out.results[0].status,"Skipped");assert.equal(f.calls.length,0);
   }
 });
-test("超过 100 个到期账号分批，Redis 不可用拒绝调度，成功/未确认账号不入队",async()=>{
+test("超过 100 个到期账号分批，Redis 不可用拒绝调度，成功/未确认账号不入队",async t=>{
+  t.mock.method(Date,"now",()=>Date.parse("2026-09-30T02:10:00Z"));
   const f=fixture();for(let i=0;i<101;i++)f.seed("NewAPI",{cron:"* * * * *"});
   await plugin.dailyCheckIn(f.ctx());assert.equal(f.jobs.size,2);
   assert.deepEqual([...f.jobs.values()].map(j=>j.input.ids.length),[100,1]);
@@ -215,7 +297,8 @@ test("余额查询建客户端失败仍保留旧值并标旧数据，不改签�
   assert.equal(storedBalance(a).snapshot.amount,"25");assert.equal(storedBalance(a).error,"host.proxy_pool_unavailable: none");
   assert.equal(f.calls.length,2);assert.equal(a.credential.fields.lastResult,undefined);
 });
-test("入队失败不在同一 slot 重试；计划不会泄露凭据或触发 POST",async()=>{
+test("入队失败不在同一 slot 重试；计划不会泄露凭据或触发 POST",async t=>{
+  t.mock.method(Date,"now",()=>Date.parse("2026-09-30T02:10:00Z"));
   const f=fixture();f.seed("NewAPI",{cron:"* * * * *"});const ctx=f.ctx();let attempts=0;
   ctx.jobs.start=async()=>{attempts++;throw Error("queue full")};
   await assert.rejects(plugin.dailyCheckIn(ctx),/queue full/);

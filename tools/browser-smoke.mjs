@@ -17,13 +17,13 @@ if(!chrome)throw Error("未找到 Chromium。设置 CHROME_PATH；此检查不�
 const day=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
 const defaults={version:"1",enabled:true,available:true,autoCheckIn:true,route:"direct",userAgent:"",
   cookie:"session=DEMO_ONLY",userId:"1024",username:"",password:"",hasCookie:true,hasPassword:false,
-  cron:"0 10 10 * * *",queryBalance:true};
+  queryBalance:true};
 const rows=[
   {id:"demo-1",label:"New API · 主力站点",siteType:"NewAPI",baseUrl:"https://new-api.example",lastSuccessDay:day,
     balance:{state:"Fresh",snapshot:{amount:"128.56",unit:"USD",quota:"64280000",note:"按站点单位换算",updatedAt:new Date().toISOString()}},
     lastResult:{status:"Success",message:"上游确认签到成功",finishedAt:new Date().toISOString()}},
   {id:"demo-2",label:"AnyRouter · 日常账号",siteType:"AnyRouter",baseUrl:"https://anyrouter.top",lastSuccessDay:day,
-    cron:"0 30 9 * * *",balance:{state:"Fresh",snapshot:{amount:"96.8",unit:"USD",quota:"48400000",note:"500000 quota / USD",updatedAt:new Date().toISOString()}},
+    balance:{state:"Fresh",snapshot:{amount:"96.8",unit:"USD",quota:"48400000",note:"500000 quota / USD",updatedAt:new Date().toISOString()}},
     lastResult:{status:"Already",message:"上游确认今日已签到",finishedAt:new Date().toISOString()}},
   {id:"demo-3",label:"AgentRouter · 工作账号",siteType:"AgentRouter",baseUrl:"https://agentrouter.org",
     cookie:"",username:"demo@example.test",password:"DEMO_ONLY",hasCookie:false,hasPassword:true,
@@ -35,7 +35,7 @@ const rows=[
   {id:"demo-6",label:"AgentRouter · 备用账号",siteType:"AgentRouter",baseUrl:"https://agentrouter.org",
     enabled:false,available:false,autoCheckIn:false,cookie:"",username:"demo2@example.test",password:"DEMO_ONLY",hasCookie:false,hasPassword:true}
 ].map(row=>({...defaults,...row}));
-const mock=`<script>window.Router2API={request:async(method,route,body)=>{if(route==="accounts")return{accounts:${JSON.stringify(rows)},jobs:[]};if(route==="schedule/preview")return{cron:body.cron,next:["2026-10-01T01:30:00Z"]};throw Error("离线演示不会执行签到")}};</script>`;
+const mock=`<script>window.Router2API={request:async(method,route,body)=>{if(route==="accounts")return{accounts:${JSON.stringify(rows)},jobs:[]};if(route==="schedule/preview")return{cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]};throw Error("离线演示不会执行签到")}};</script>`;
 const version=JSON.parse(await fs.readFile(path.join(root,"plugin.json"),"utf8")).version;
 const html=(await fs.readFile(path.join(root,"ui/index.html"),"utf8")).replace("</head>",mock+"</head>").replace(`>v${version}<`,`>演示数据 · v${version}<`);
 await fs.writeFile(path.join(out,"index.html"),html);
@@ -88,14 +88,14 @@ try{
   assert.equal(await evaluate("document.querySelector('#editor').open"),true);
   assert.equal(await evaluate("document.querySelector('#editorTitle').textContent"),"账号编辑");
   assert.equal(await evaluate("document.querySelector('#providerHint')"),null);
-  assert.equal(await evaluate("document.querySelector('[name=\"cron\"]').value"),"0 10 10 * * *");
-  await evaluate("document.querySelector('#dailyTime').value='09:30';document.querySelector('#applyTime').click();document.querySelector('#previewCron').click()");
+  assert.equal(await evaluate("document.querySelector('[name=\"cron\"]')"),null);
+  await evaluate("document.querySelector('#previewCron').click()");
   for(let i=0;i<30;i++){if(await evaluate("document.querySelector('#cronPreview').textContent.includes('2026')"))break;await wait(50)}
   assert.equal(await evaluate("document.querySelector('#cronPreview').textContent.includes('2026')"),true);
   await screenshot("editor-visual");
   await evaluate("document.querySelector('#jsonTab').click()");
   assert.equal(await evaluate("JSON.parse(document.querySelector('#jsonText').value).cookie"),"session=DEMO_ONLY");
-  assert.equal(await evaluate("JSON.parse(document.querySelector('#jsonText').value).cron"),"0 30 9 * * *");
+  assert.equal(await evaluate("'cron' in JSON.parse(document.querySelector('#jsonText').value)"),false);
   await screenshot("editor-json");
   await evaluate("document.querySelector('#closeEditor').click()");
   await send("Emulation.setDeviceMetricsOverride",{width:430,height:1000,deviceScaleFactor:1,mobile:true});

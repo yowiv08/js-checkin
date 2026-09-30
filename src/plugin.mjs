@@ -1,7 +1,7 @@
 import { endpoint, input, id, text, InputError, decode, flag } from "./common.mjs";
 import * as accounts from "./accounts.mjs";
 import { runBatch, refreshBalance } from "./runner.mjs";
-import { parseCron, nextRuns } from "./cron.mjs";
+import { DEFAULT_CRON, nextRuns } from "./cron.mjs";
 import { enqueueDue } from "./schedule.mjs";
 
 export const listAccounts = endpoint(accounts.listAccounts);
@@ -52,10 +52,7 @@ export async function dailyCheckIn(ctx) {
   await enqueueDue(ctx);
 }
 export const previewSchedule = endpoint(async ctx => {
-  let cron, next;
-  try { cron = parseCron(input(ctx.body).cron).expression; next = nextRuns(cron); }
-  catch (error) { throw new InputError(400,error.message); }
-  return ctx.json(200,{cron,timezone:"UTC+8",next,warning:next.length ? null : "未来五年没有匹配时刻，请检查日期组合"});
+  return ctx.json(200,{cron:DEFAULT_CRON,timezone:"UTC+8",next:nextRuns(DEFAULT_CRON)});
 });
 export const startBalance = endpoint(async ctx => {
   const accountId = id(input(ctx.body).id), record = await accounts.readAccount(ctx,accountId);

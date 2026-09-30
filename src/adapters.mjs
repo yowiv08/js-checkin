@@ -48,6 +48,7 @@ export function interpret(siteType, response) {
   if (json.success === false || json.error != null && json.error !== false)
     return result("Failed", "上游返回业务失败，请检查账号或站点设置");
   if (json.success !== true) return result("Uncertain", "响应没有明确业务成功标志，未记录为成功");
+  if (siteType === "AnyRouter") return result("Success", "签到接口返回成功");
   if (siteType === "AgentRouter") {
     const data = json.data;
     const checked = data?.checked_in ?? data?.check_in;

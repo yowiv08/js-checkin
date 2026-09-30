@@ -158,9 +158,9 @@ test("POST 再次遇到 WAF 不重发", async () => {
   assert.equal((await runOne(f.ctx(),a.id)).status,"Challenge");assert.equal(posts(f).length,1);
   assert.equal(f.calls.length,3);
 });
-test("WAF 通行不等于业务成功，空签到响应仍为不确定", async () => {
+test("WAF 通行不等于业务成功，缺失 success 的响应不确认签到", async () => {
   const f=fixture(),a=f.seed("AnyRouter");passing(f);const handler=f.handler;
-  f.handler=async spec=>spec.method==="POST"?response({success:true,message:""}):handler(spec);
+  f.handler=async spec=>spec.method==="POST"?response({message:""}):handler(spec);
   assert.equal((await runOne(f.ctx(),a.id)).status,"Uncertain");
   assert.equal(a.credential.fields.lastSuccessDay,undefined);
 });
@@ -283,7 +283,7 @@ test("AgentRouter WAF 等待同步续期站点登录锁与账号锁",async t=>{
   assert.ok(renewed.filter(key=>key.startsWith("agent:")).length>=4);
   assert.ok(renewed.filter(key=>key.startsWith("account:")).length>=4);
 });
-test("AnyRouter 实际空消息响应保留原文，可更新余额但不确认今日签到",async()=>{
+test("AnyRouter 空消息成功响应保留原文，更新余额并确认今日签到",async()=>{
   const f=fixture(),a=f.seed("AnyRouter",{queryBalance:true});passing(f);
   const handler=f.handler;
   f.handler=async spec=>{
@@ -292,8 +292,8 @@ test("AnyRouter 实际空消息响应保留原文，可更新余额但不确认�
     return handler(spec);
   };
   const out=await runOne(f.ctx(),a.id);
-  assert.equal(out.status,"Uncertain");assert.equal(out.message,'{"message":"","success":true}');
-  assert.equal(a.credential.fields.lastSuccessDay,undefined);
+  assert.equal(out.status,"Success");assert.equal(out.message,'{"message":"","success":true}');
+  assert.equal(a.credential.fields.lastSuccessDay,day());
   assert.equal(savedBalance(a).snapshot.amount,"500.620076");
   assert.equal(savedBalance(a).snapshot.unit,"USD");assert.equal(posts(f).length,1);
 });

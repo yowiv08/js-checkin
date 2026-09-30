@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DEFAULTS } from "./src/common.mjs";
-import { DEFAULT_CRON } from "./src/cron.mjs";
 const clone = value => structuredClone(value);
 export const cancellation = () => Object.assign(new Error("cancelled"), { code: "host.cancelled" });
 export function fixture({ rawHttp = false } = {}) {
@@ -16,7 +15,7 @@ export function fixture({ rawHttp = false } = {}) {
   f.seed = (siteType = "NewAPI", overrides = {}, accountId = `account-${++nextId}`) => {
     const config = {
       siteType, baseUrl: DEFAULTS[siteType] || "https://new.example", enabled: true, autoCheckIn: true,
-      cron: DEFAULT_CRON, queryBalance: false,
+      queryBalance: false,
       route: "direct", userAgent: "", cookie: siteType === "AgentRouter" ? "" : "session=COOKIE_SECRET",
       userId: siteType === "AgentRouter" ? "" : "90071992547409931234",
       username: siteType === "AgentRouter" ? "ethan@example.test" : "", password: siteType === "AgentRouter" ? "PASSWORD_SECRET" : "",

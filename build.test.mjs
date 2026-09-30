@@ -16,7 +16,7 @@ test("发行包仅清单、单个 ESM、自包含页面，静态构建不调用�
     assert.deepEqual(await fs.readdir(path.join(output,"ui")),["index.html"]);
     const manifest=JSON.parse(await fs.readFile(path.join(output,"plugin.json"),"utf8"));
     assert.equal(manifest.entry,"server/plugin.mjs");assert.equal(manifest.runtime,"jint");
-    assert.equal(manifest.jobs[0].handler,"checkInJob");assert.equal(manifest.tasks[0].cron,"0 * * * * *");
+    assert.equal(manifest.jobs[0].handler,"checkInJob");assert.equal(manifest.tasks[0].cron,"0 10 10 * * *");
     assert.ok(manifest.endpoints.some(e=>e.path==="balance/start"));
     assert.ok(manifest.endpoints.some(e=>e.path==="schedule/preview"));
     assert.ok(manifest.endpoints.every(e=>e.auth==="AdminSession"));

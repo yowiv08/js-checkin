@@ -31,7 +31,11 @@ for(const [type,path] of [["NewAPI","/api/user/checkin"],["AnyRouter","/api/user
 }
 const cases=[
   ["重复签到","NewAPI",{success:false,message:"今日已签到"},200,"Already"],
-  ["Any空消息","AnyRouter",{success:true,message:""},200,"Uncertain"],
+  ["Any空消息","AnyRouter",{success:true,message:""},200,"Success"],
+  ["Any缺消息","AnyRouter",{success:true},200,"Success"],
+  ["Any空消息业务失败","AnyRouter",{success:false,message:""},200,"Failed"],
+  ["Any冲突错误","AnyRouter",{success:true,message:"",error:"denied"},200,"Failed"],
+  ["NewAPI空消息不套Any规则","NewAPI",{success:true,message:""},200,"Uncertain"],
   ["Any未声明成功","AnyRouter",{message:"签到成功"},200,"Uncertain"],
   ["奖励为零仍有明确证据","NewAPI",{success:true,data:{quota_awarded:0}},200,"Success"],
   ["缺少 Agent 标志","AgentRouter",{success:true,data:{}},200,"Uncertain"],
@@ -207,7 +211,8 @@ test("批量进度区分业务失败；取消只请求退出，不直接宣布 C
   assert.equal(f.jobs.get(queued.body.id).state,"Queued");
   assert.equal((await plugin.jobStatus(f.ctx(undefined,{query:{id:"missing"}}))).statusCode,404);
 });
-test("分钟任务只将匹配的启用账号入队；记录不包含凭据",async()=>{
+test("统一定时任务只将启用自动签到的账号入队；记录不包含凭据",async t=>{
+  t.mock.method(Date,"now",()=>Date.parse("2026-09-30T02:10:00Z"));
   const f=fixture();f.seed("NewAPI",{cron:"* * * * *"});f.seed("NewAPI",{autoCheckIn:false});f.seed("AgentRouter",{enabled:false});
   await plugin.dailyCheckIn(f.ctx(undefined,{phase:"Task"}));assert.equal(f.calls.length,0);
   assert.equal(f.jobs.size,1);

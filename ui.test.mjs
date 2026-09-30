@@ -104,21 +104,18 @@ test("响应式断点、键盘焦点和无远程资源约束",()=>{
   assert.doesNotMatch(html,/\b(?:localStorage|sessionStorage|fetch)\s*[.(]/);
   assert.doesNotMatch(html,/\bwindow\.(?:confirm|alert|prompt)\s*\(/);
 });
-test("Cron 默认/每日时间预设/JSON 双向同步，预览不执行签到",async t=>{
-  const p=await page(t,[account()],async(_,route,body)=>{
-    if(route==="schedule/preview")return{cron:body.cron,next:["2026-10-01T01:30:00Z"]};
+test("统一时间预览不执行签到；余额开关仍支持 JSON 双向同步",async t=>{
+  const p=await page(t,[account()],async(_,route)=>{
+    if(route==="schedule/preview")return{cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]};
   });p.click('[data-action="edit"]');
-  assert.equal(p.$('[name="cron"]').value,"0 10 10 * * *");
-  p.$("#dailyTime").value="09:30";p.click("#applyTime");
-  assert.equal(p.$('[name="cron"]').value,"0 30 9 * * *");
-  p.click("#jsonTab");const config=JSON.parse(p.$("#jsonText").value);assert.equal(config.cron,"0 30 9 * * *");
+  assert.equal(p.$('[name="cron"]'),null);
+  p.click("#jsonTab");const config=JSON.parse(p.$("#jsonText").value);assert.equal(config.cron,undefined);
   assert.equal(config.queryBalance,true);
-  config.cron="0 30 9 * * 1-5";config.queryBalance=false;p.$("#jsonText").value=JSON.stringify(config);
+  config.queryBalance=false;p.$("#jsonText").value=JSON.stringify(config);
   p.click("#previewCron");await until(()=>p.$("#cronPreview").textContent.includes("2026"));
   assert.match(p.$("#cronPreview").textContent,/UTC\+8/);
   assert.equal(p.calls.filter(c=>c.route==="checkin/start"||c.route==="balance/start").length,0);
-  p.click("#visualTab");assert.equal(p.$('[name="cron"]').value,"0 30 9 * * 1-5");assert.equal(p.$('[name="queryBalance"]').checked,false);
-  p.click("#resetCron");assert.equal(p.$('[name="cron"]').value,"0 10 10 * * *");
+  p.click("#visualTab");assert.equal(p.$('[name="queryBalance"]').checked,false);
 });
 test("余额卡显示精确字符串/旧数据/未知，不把未知当成零；Agent 无隐含登录按钮",async t=>{
   const p=await page(t,[account({balance:{state:"Stale",error:"上游限流",snapshot:{amount:"180143985094819.862468",unit:"USD",quota:"90071992547409931234",note:"精确金额",updatedAt:"2026-09-29T00:00:00Z"}}}),
@@ -140,11 +137,11 @@ test("余额单独刷新入队，防重复点击且不调用签到接口",async 
   assert.match(p.$("#jobTitle").textContent,/余额查询/);
   assert.equal(p.calls.filter(c=>c.route==="checkin/start").length,0);
 });
-test("Cron 编辑期间过期的预览响应不会覆盖提示",async t=>{
+test("重新打开编辑器后，旧预览响应不会覆盖提示",async t=>{
   let resolve;
   const p=await page(t,[account()],async(_,route)=>route==="schedule/preview"?new Promise(r=>resolve=r):undefined);
   p.click('[data-action="edit"]');p.click("#previewCron");
-  p.$('[name="cron"]').value="bad";p.event(p.$('[name="cron"]'),"input");
+  p.click("#closeEditor");p.click("#add");
   resolve({cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]});
   await until(()=>!p.$("#previewCron").disabled);assert.doesNotMatch(p.$("#cronPreview").textContent,/2026/);
 });
@@ -205,4 +202,23 @@ test("成功响应同样展示正文",async t=>{
   const p=await page(t,[account({lastResult:{status:"Success",httpStatus:200,message:raw}})]);
   assert.equal(p.$(".result-msg").textContent,raw);
   assert.match(p.$(".result").textContent,/HTTP 200/);
+});
+test("所有账号显示统一时间；编辑器和导出 JSON 不再带 Cron",async t=>{
+  const p=await page(t,[account({cron:"0 30 9 * * *"})],async(_,route)=>{
+    if(route==="schedule/preview")return{cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]};
+  });
+  assert.match(p.$(".card-schedule").textContent,/每天 10:10/);
+  assert.doesNotMatch(p.$(".card-schedule").textContent,/09:30|0 30 9/);
+  p.click('[data-action="edit"]');
+  for(const selector of ['[name="cron"]','#dailyTime','#applyTime','#resetCron'])
+    assert.equal(p.$(selector),null);
+  p.click("#jsonTab");
+  const value=JSON.parse(p.$("#jsonText").value);assert.equal("cron" in value,false);
+  p.$("#jsonText").value=JSON.stringify({...value,cron:"not a cron"});
+  p.click("#visualTab");assert.equal(p.$("#formError").textContent,"");
+  p.click("#jsonTab");assert.equal("cron" in JSON.parse(p.$("#jsonText").value),false);
+  p.click("#previewCron");await until(()=>p.$("#cronPreview").textContent.includes("2026"));
+  assert.deepEqual(p.calls.find(c=>c.route==="schedule/preview").body,{});
+  p.event(p.$("#accountForm"),"submit");await until(()=>!p.$("#editor").open);
+  assert.equal("cron" in p.calls.find(c=>c.route==="accounts/save").body,false);
 });

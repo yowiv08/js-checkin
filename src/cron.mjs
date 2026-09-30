@@ -1,5 +1,12 @@
 export const DEFAULT_CRON = "0 10 10 * * *";
+export const SCHEDULE_LABEL = "每天 10:10（UTC+8）";
 const OFFSET = 8 * 3600000;
+// 延迟触发沿用当天固定时刻，避免重复入队。
+export function dailySlot(now = Date.now()) {
+  const local = new Date(now + OFFSET);
+  const slot = Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate(),10,10) - OFFSET;
+  return now >= slot && now - slot <= 1800000 ? slot : null;
+}
 export function parseCron(value = DEFAULT_CRON) {
   if (typeof value !== "string" || value.length > 160) throw Error("Cron 必须为不超过 160 字符的表达式");
   const parts = value.trim().split(/\s+/);

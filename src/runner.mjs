@@ -1,13 +1,14 @@
 import {
-  InputError, day, enabled, resultData, acquire, renew, release, accountLock,
+  InputError, day, enabled, acquire, renew, release, accountLock,
   cancelled, errorMessage, STATUS_LABELS
 } from "./common.mjs";
 import { readAccount, persist, persistBalance } from "./accounts.mjs";
 import { requestFor, interpret, businessAccepted } from "./adapters.mjs";
 import { readBalance } from "./balance.mjs";
 import { scheduleStamp } from "./schedule.mjs";
-import { cronMatches } from "./cron.mjs";
+import { cronMatches, DEFAULT_CRON } from "./cron.mjs";
 import { prepareWaf } from "./waf.mjs";
+import { blocksUncertain, legacySuccessDay } from "./uncertainty.mjs";
 
 /** @param {import("./common.mjs").Context} ctx */
 export async function writeLog(ctx, result, taskName) {
@@ -67,11 +68,12 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     if (!enabled(record) || automatic && !record.config.autoCheckIn)
       return finish("Skipped", "账号已停用或未开启自动签到");
     if (automatic && slot !== null && (Date.now() < slot || Date.now() - slot > 1800000
-      || stamps?.[accountId] !== scheduleStamp(ctx,record.config) || !cronMatches(record.config.cron,slot)))
+      || stamps?.[accountId] !== scheduleStamp(ctx,record.config) || !cronMatches(DEFAULT_CRON,slot)))
       return finish("Skipped","排队中的定时配置已变化或超过 30 分钟，未执行过期计划");
-    if (record.credential.fields.lastSuccessDay === day())
+    if (record.credential.fields.lastSuccessDay === day() ||
+        legacySuccessDay(record.config,record.credential.fields) === day())
       return finish("Skipped", "本地已确认今日成功，未重复发送");
-    if (resultData(record.credential.fields)?.status === "Uncertain" && !acknowledgeUncertain)
+    if (blocksUncertain(record.config,record.credential.fields) && !acknowledgeUncertain)
       return finish("Skipped", "上次结果不确定；请先到站点确认，再手动确认是否重新发送");
     const origin = ctx.url.parse(record.config.baseUrl).origin;
     if (!(await ctx.http.approvedOrigins()).includes(origin))

@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "js-checkin",
   "name": "中转站签到",
-  "description": "New API、AnyRouter、AgentRouter 签到管理，支持余额查询、自定义 Cron、可视化与 JSON 配置。",
-  "version": "0.1.1",
+  "description": "New API、AnyRouter、AgentRouter 签到管理，每天 10:10 UTC+8 统一签到，支持余额查询、可视化与 JSON 配置。",
+  "version": "0.1.2",
   "runtime": "jint",
   "hostApi": "1",
   "format": "esm-bundle",
@@ -39,7 +39,7 @@
     { "method": "POST", "path": "jobs/cancel", "handler": "cancelJob", "auth": "AdminSession" }
   ],
   "tasks": [
-    { "name": "js-checkin-daily", "handler": "dailyCheckIn", "cron": "0 * * * * *", "timeoutSeconds": 60, "description": "自动签到" }
+    { "name": "js-checkin-daily", "handler": "dailyCheckIn", "cron": "0 10 10 * * *", "timeoutSeconds": 60, "description": "统一每天 10:10（UTC+8）自动签到" }
   ],
   "jobs": [
     { "name": "js-checkin-run", "handler": "checkInJob", "timeoutSeconds": 1800, "description": "批量签到与进度查询" },

@@ -1,5 +1,4 @@
 /** @typedef {import("../sdk/index").PluginContext} Context */
-import { DEFAULT_CRON, parseCron } from "./cron.mjs";
 import { exceptionMessage, RESPONSE_LIMIT } from "./diagnostics.mjs";
 export class InputError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -67,13 +66,10 @@ export function configFrom(ctx, body, previous = undefined) {
     siteType, baseUrl: target.url, route,
     enabled: flag(body.enabled, "启用状态", previous?.enabled ?? true),
     autoCheckIn: flag(body.autoCheckIn, "自动签到", previous?.autoCheckIn ?? false),
-    cron: DEFAULT_CRON,
     queryBalance: flag(body.queryBalance, "签到后更新余额", previous?.queryBalance ?? true),
     userAgent: text(body.userAgent ?? previous?.userAgent ?? "", "User-Agent", 512).trim(),
     cookie: "", userId: "", username: "", password: ""
   };
-  try { config.cron = parseCron(body.cron ?? previous?.cron ?? DEFAULT_CRON).expression; }
-  catch (error) { throw new InputError(400, error.message); }
   if (siteType === "AgentRouter") {
     config.username = text(body.username ?? previous?.username ?? "", "用户名或邮箱", 256, true).trim();
     const supplied = text(body.password ?? "", "密码", 4096);

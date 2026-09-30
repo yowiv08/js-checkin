@@ -2,6 +2,8 @@ import {
   InputError, input, text, id, configFrom, decode, identity, resultData,
   enabled, baseUrl, acquire, release, accountLock, cancelled
 } from "./common.mjs";
+import { legacySuccessDay } from "./uncertainty.mjs";
+import { SCHEDULE_LABEL } from "./cron.mjs";
 
 /** @param {import("./common.mjs").Context} ctx */
 export async function readAccount(ctx, accountId) {
@@ -13,16 +15,18 @@ export async function readAccount(ctx, accountId) {
 }
 export function card(record) {
   const c = record.config;
+  const previous = resultData(record.credential.fields);
+  const correctedDay = legacySuccessDay(c,record.credential.fields);
   return {
     id: record.account.id, version: record.version, label: record.account.label || record.account.id,
     siteType: c.siteType, baseUrl: c.baseUrl, route: c.route,
     enabled: c.enabled, autoCheckIn: c.autoCheckIn, available: enabled(record),
-    cron: c.cron, queryBalance: c.queryBalance, balance: balanceData(record.credential.fields),
+    schedule: SCHEDULE_LABEL, queryBalance: c.queryBalance, balance: balanceData(record.credential.fields),
     userAgent: c.userAgent, userId: c.userId, username: c.username,
     cookie: c.cookie, password: c.password,
     hasCookie: !!c.cookie, hasPassword: !!c.password,
-    lastResult: resultData(record.credential.fields),
-    lastSuccessDay: record.credential.fields.lastSuccessDay || null
+    lastResult: correctedDay ? {...previous,status:"Success"} : previous,
+    lastSuccessDay: record.credential.fields.lastSuccessDay || correctedDay || null
   };
 }
 /** @param {import("./common.mjs").Context} ctx */
@@ -36,7 +40,7 @@ export async function listAccounts(ctx) {
         invalid: true, available: false, error: "账号配置损坏，可删除后重新添加" };
     }
   });
-  return ctx.json(200, { accounts: rows, jobs: await ctx.jobs.list(), schedule: "每账号自定义 Cron · 默认每日 10:10（UTC+8）" });
+  return ctx.json(200, { accounts: rows, jobs: await ctx.jobs.list(), schedule: SCHEDULE_LABEL });
 }
 /** @param {import("./common.mjs").Context} ctx */
 export async function saveAccount(ctx) {
