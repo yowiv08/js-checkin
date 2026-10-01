@@ -40,10 +40,17 @@
     .workspace-nav{margin:22px 0;justify-content:flex-start;display:inline-flex}.card-actions{flex-wrap:wrap}
     .token-selector{max-width:440px;min-width:0;flex:1}.token-selector select{background:white}
     .token-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:white}
-    .token-table{border-collapse:collapse;width:100%;text-align:left;font-size:12px}.token-table th{font-weight:600;color:var(--muted);background:#fafafe;white-space:nowrap}
+    .token-table{border-collapse:collapse;width:100%;text-align:left;font-size:13px;min-width:1000px}.token-table th{font-weight:600;color:var(--muted);background:#fff;white-space:nowrap}
     .token-table th,.token-table td{padding:16px 14px;border-bottom:1px solid var(--line);vertical-align:middle}.token-table tr:last-child td{border-bottom:0}
-    .token-table td{overflow-wrap:anywhere;max-width:280px}.token-table .actions{min-width:155px;gap:5px}.token-table button{font-size:11px;padding:5px 8px}
+    .token-table td{overflow-wrap:anywhere;max-width:280px}.token-table .actions{min-width:150px;gap:7px;flex-wrap:nowrap}.token-table button{font-size:12px;padding:5px 12px;border:0;border-radius:20px;background:#f3f4f5;box-shadow:none}
+    .token-table tbody tr:hover{background:#f8f9fa}.token-table .token-copy{color:#009ce5}.token-table td:nth-child(2){min-width:160px}
+    .token-group,.token-used,.token-remaining{display:inline-block;padding:4px 9px;border-radius:20px;white-space:nowrap;font-size:12px}
+    .token-group{margin-left:6px;background:#e6f4ff;color:#247ab2}.token-used{background:#f0f1f2;color:#606771}.token-remaining{border:1px solid var(--line);background:white}
+    .token-date{white-space:nowrap;font-size:12px}.token-more summary{list-style:none;border-radius:50%;padding:4px 7px;cursor:pointer;background:#f3f4f5;font-weight:700}.token-more summary::-webkit-details-marker{display:none}
+    .token-menu{position:fixed;z-index:50;min-width:130px;padding:7px;background:white;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 25px #18253920}
+    .token-menu button{display:block;width:100%;text-align:left;background:white;border-radius:6px;padding:10px 12px}.token-menu button:hover{background:#f5f6f8}.token-menu .danger{color:#e5484d}
     .token-key{display:block;font:11px/1.7 Consolas,monospace;width:100%;min-width:110px;border:0;color:var(--muted);background:transparent;padding:0;margin-top:5px}
+    .token-key[hidden]{display:none}
     .token-status{font-size:11px;border-radius:6px;padding:4px 7px;background:#eef7f1;color:var(--green);white-space:nowrap}.token-status.disabled{background:#f2f2f7;color:var(--muted)}
     .token-pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:18px;color:var(--muted);font-size:12px}
     #tokenPageError{min-height:20px}#tokenEditor fieldset{border:0;padding:0;margin:0;min-width:0}
@@ -56,7 +63,7 @@
 </head>
 <body>
 <main class="app">
-  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.2.0</span></header>
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.2.1</span></header>
   <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询、API 令牌</p></div><div class="schedule"><small><span class="live"></span>统一签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
   <nav class="tabs workspace-nav" aria-label="工作台模块"><button id="accountsTab" class="active" aria-pressed="true">签到账号</button><button id="tokensTab" aria-pressed="false">API 令牌</button></nav>
   <section id="accountsPage">
@@ -278,9 +285,9 @@
     }catch(error){$("#formError").textContent=messageText(error.message)}
   };
   $("#copyJson").onclick=async()=>{
-    try{const value=JSON.stringify(current(),null,2);switchMode("json");$("#jsonText").value=value;$("#jsonText").select();
-      if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(value);notify("已复制");return}catch{}}
-      notify("按 Ctrl+C 复制");
+    try{const value=JSON.stringify(current(),null,2);switchMode("json");$("#jsonText").value=value;
+      await CheckinTokens.copyText(()=>value,()=>editor.open);
+      if(editor.open)notify("已复制");
     }catch(error){$("#formError").textContent=messageText(error.message)}
   };
   $("#filters").addEventListener("click",event=>{const button=event.target.closest("[data-type]");if(!button)return;filter=button.dataset.type;for(const b of $("#filters").children){b.classList.toggle("active",b===button);b.setAttribute("aria-pressed",String(b===button))}render()});

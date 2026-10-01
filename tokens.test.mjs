@@ -51,6 +51,64 @@ async function tokenFixture(siteType="NewAPI",{legacy=false,config={},masked=fal
   return {f,account,token,records,get,post,detail};
 }
 const writes=f=>f.calls.filter(c=>c.method!=="GET");
+test("服务端签发操作 ID，签发不请求上游，超过十分钟的未提交凭证仍能使用一次",async()=>{
+  const h=await tokenFixture(),now=Date.now;
+  let issued;
+  try{
+    Date.now=()=>now()-3600000;
+    issued=await h.post(plugin.issueTokenOperation);
+  }finally{Date.now=now;}
+  assert.equal(issued.statusCode,200);assert.equal(h.f.requests.length,0);
+  const body={operationId:issued.body.operationId,changes:{name:"server issued",unlimited_quota:true}};
+  const result=await h.post(plugin.createToken,body);assert.equal(result.statusCode,200,JSON.stringify(result.body));
+  const count=writes(h.f).length;
+  const again=await h.post(plugin.createToken,body);assert.equal(again.statusCode,200);assert.equal(writes(h.f).length,count);
+});
+test("已签发凭证绑定账号配置，校验失败后修正表单可继续使用",async()=>{
+  const h=await tokenFixture(),issued=await h.post(plugin.issueTokenOperation);
+  const operationId=issued.body.operationId;
+  assert.equal((await h.post(plugin.createToken,{operationId,changes:{name:"",unlimited_quota:true}})).statusCode,400);
+  assert.equal((await h.post(plugin.createToken,{operationId,changes:{name:"fixed",unlimited_quota:true}})).statusCode,200);
+  const another=await h.post(plugin.issueTokenOperation);
+  const config=JSON.parse(h.account.credential.fields.config);config.userAgent="changed";
+  h.account.credential.fields.config=JSON.stringify(config);
+  assert.equal((await h.post(plugin.createToken,{operationId:another.body.operationId,changes:{name:"changed",unlimited_quota:true}})).statusCode,409);
+});
+test("分页格式已识别时仅请求目标页，短期汇率缓存不重复读 status",async()=>{
+  const h=await tokenFixture();
+  for(let i=1;i<21;i++)h.records.push({...initial(),id:String(i)});
+  const first=await h.get(plugin.listTokens);
+  assert.equal(first.body.format,"items");
+  const start=h.f.requests.length;
+  const second=await h.get(plugin.listTokens,{page:"2",format:first.body.format});
+  assert.equal(second.statusCode,200);assert.equal(second.body.items.length,1);
+  const requests=h.f.requests.slice(start);
+  assert.equal(requests.filter(c=>c.url.includes("/api/token/")).length,1);
+  assert.ok(requests.some(c=>c.url.includes("p=2")));
+  assert.equal(requests.filter(c=>c.url.endsWith("/api/status")).length,0);
+  assert.equal(requests.length,2);
+  const beforeOptions=h.f.requests.length;
+  const options=await h.get(plugin.tokenOptions);assert.equal(options.statusCode,200);
+  assert.equal(h.f.requests.length-beforeOptions,3);
+});
+test("已签发操作超时保持待核对，长期丢失记录也不会重放",async()=>{
+  const h=await tokenFixture(),issued=await h.post(plugin.issueTokenOperation),handler=h.f.handler;
+  h.f.handler=async spec=>{if(spec.method==="POST")throw Error("timeout");return handler(spec);};
+  const body={operationId:issued.body.operationId,changes:{name:"pending",unlimited_quota:true}};
+  assert.equal((await h.post(plugin.createToken,body)).body.code,"PENDING");
+  const count=writes(h.f).length;
+  assert.equal((await h.post(plugin.createToken,body)).body.code,"PENDING");
+  assert.equal(writes(h.f).length,count);
+  const ctx=h.f.ctx(),key="token-operation:"+ctx.crypto.sha256(JSON.stringify([h.account.id,body.operationId]));
+  await ctx.state.shared.compareExchange(key,await ctx.state.shared.get(key),undefined);
+  const now=Date.now;
+  try{
+    Date.now=()=>now()+8*86400000;
+    const result=await h.post(plugin.createToken,body);
+    assert.equal(result.statusCode,409);assert.match(result.body.error,/过期/);
+  }finally{Date.now=now;}
+  assert.equal(writes(h.f).length,count);
+});
 test("兼容宿主冻结的 HttpClientHandle，不修改其方法",async()=>{
   const h=await tokenFixture();
   const ctx=h.f.ctx(undefined,{query:{accountId:h.account.id}});

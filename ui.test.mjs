@@ -26,6 +26,7 @@ function tokenMock(overrides={}){
     if(route.startsWith("tokens/detail?"))return {token:tokenRow(overrides.token)};
     if(route.startsWith("tokens/options?"))return tokenSettings(overrides.settings);
     if(route==="tokens/key")return {key:"sk-DOM_TEST_SECRET"};
+    if(route==="tokens/operation")return {operationId:"SERVER:"+Math.random()};
     if(["tokens/create","tokens/update","tokens/status","tokens/delete"].includes(route))return {success:true,message:"已完成"};
   };
 }
@@ -67,7 +68,7 @@ test("令牌独立页面与快捷入口；密钥按需显示复制，切账号�
   assert.equal(copied[0],"sk-DOM_TEST_SECRET");assert.equal(p.calls.filter(c=>c.route==="tokens/key").length,1);
   Object.defineProperty(p.dom.window.document,"hidden",{configurable:true,value:true});
   p.event(p.dom.window.document,"visibilitychange");
-  assert.match(p.$(".token-key").value,/•/);assert.equal(p.$('[data-token-action="show"]').textContent,"显示");
+  assert.match(p.$(".token-key").value,/•/);assert.equal(p.$('[data-token-action="show"]').textContent,"查看密钥");
   p.$("#tokenAccount").value="b";p.event(p.$("#tokenAccount"),"change");
   await until(()=>!!p.$(".token-key"));assert.match(p.$(".token-key").value,/•/);
   assert.ok(p.calls.some(c=>c.route.includes("accountId=b")));
@@ -150,6 +151,81 @@ test("关闭编辑器或切换账号后忽略迟到的详情与选项",async t=>
   p.$("#tokenAccount").value="b";p.event(p.$("#tokenAccount"),"change");
   resolveOptions(tokenSettings());await tick();
   assert.equal(p.$("#tokenEditor").open,false);assert.equal(p.$('#tokenForm [name="name"]').value,"");
+});
+test("剪贴板 API 被拒绝时自动复制，不暴露密钥也不要求 Ctrl+C",async t=>{
+  const p=await page(t,[account()],tokenMock());
+  Object.defineProperty(p.dom.window.navigator,"clipboard",{value:{writeText:async()=>{throw Error("Permissions policy")}}});
+  let copied;
+  p.dom.window.document.execCommand=command=>{assert.equal(command,"copy");copied=p.dom.window.document.activeElement.value;return true;};
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="copy"]');
+  await until(()=>copied==="sk-DOM_TEST_SECRET");
+  assert.equal(p.$(".token-key").hidden,true);assert.match(p.$(".token-key").value,/•/);
+  assert.doesNotMatch(p.$("#tokensPage").textContent,/Ctrl\+C/);
+  assert.equal([...p.dom.window.document.querySelectorAll("textarea")].some(el=>el.value.includes("sk-DOM_TEST_SECRET")),false);
+});
+test("复制被浏览器完全阻止时明确失败，不误报成功或选中密钥",async t=>{
+  const p=await page(t,[account()],tokenMock());
+  p.dom.window.document.execCommand=()=>false;
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="copy"]');
+  await until(()=>p.$("#tokenPageError").textContent.includes("剪贴板权限"));
+  assert.equal(p.$(".token-key").hidden,true);assert.match(p.$(".token-key").value,/•/);
+});
+test("复制密钥请求迟到时不会写入旧账号密钥",async t=>{
+  let resolveKey,copies=0;
+  const p=await page(t,[account(),account({id:"b"})],tokenMock({handler:async(method,route)=>route==="tokens/key"?new Promise(r=>resolveKey=r):undefined}));
+  p.dom.window.document.execCommand=()=>{copies++;return true;};
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="copy"]');
+  await until(()=>!!resolveKey);
+  p.$("#tokenAccount").value="b";p.event(p.$("#tokenAccount"),"change");
+  resolveKey({key:"sk-OLD_ACCOUNT"});await tick();await tick();
+  assert.equal(copies,0);
+});
+test("ClipboardItem 在点击时申请写入，异步取得密钥后填充",async t=>{
+  let resolveKey,written;
+  const p=await page(t,[account()],tokenMock({handler:async(method,route)=>route==="tokens/key"?new Promise(r=>resolveKey=r):undefined}));
+  p.dom.window.ClipboardItem=class{constructor(value){this.value=value;}};
+  Object.defineProperty(p.dom.window.navigator,"clipboard",{value:{write:async items=>{written=items[0];await written.value["text/plain"];}}});
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="copy"]');
+  assert.ok(written);await until(()=>!!resolveKey);resolveKey({key:"sk-DOM_TEST_SECRET"});
+  await until(()=>!p.$("#tokenRefresh").disabled);
+  const blob=await written.value["text/plain"];
+  assert.equal(blob.type,"text/plain");assert.equal(p.$(".token-key").hidden,true);
+});
+test("列表快照直接打开编辑器，60 秒内重开不请求详情或选项；手动刷新清缓存",async t=>{
+  const p=await page(t,[account()],tokenMock());
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));p.click('[data-token-action="edit"]');
+  await until(()=>!p.$("#tokenSave").disabled);p.click("#tokenCancel");p.click('[data-token-action="edit"]');
+  await until(()=>!p.$("#tokenSave").disabled);
+  assert.equal(p.calls.filter(c=>c.route.startsWith("tokens/detail?")).length,0);
+  assert.equal(p.calls.filter(c=>c.route.startsWith("tokens/options?")).length,1);
+  p.click("#tokenCancel");p.click("#tokenRefresh");await until(()=>!p.$("#tokenRefresh").disabled);
+  p.click('[data-token-action="edit"]');await until(()=>!p.$("#tokenSave").disabled);
+  assert.equal(p.calls.filter(c=>c.route.startsWith("tokens/options?")).length,2);
+});
+test("操作凭证由服务端签发，不受浏览器时钟偏差影响；成功启停后生成新凭证",async t=>{
+  const p=await page(t,[account()],tokenMock());
+  p.dom.window.Date.now=()=>1;
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));
+  for(let i=0;i<2;i++){
+    p.click('[data-token-action="status"]');
+    await until(()=>p.calls.filter(c=>c.route==="tokens/status").length===i+1&&!p.$("#tokenRefresh").disabled);
+  }
+  const writes=p.calls.filter(c=>c.route==="tokens/status");
+  assert.match(writes[0].body.operationId,/^SERVER:/);
+  assert.notEqual(writes[0].body.operationId,writes[1].body.operationId);
+  assert.equal(p.calls.filter(c=>c.route==="tokens/operation").length,2);
+});
+test("紧凑令牌表格显示创建时间、独立额度和更多菜单，不包含聊天",async t=>{
+  const p=await page(t,[account()],tokenMock({token:{created_time:"0",unlimited_quota:true}}));
+  p.click("#tokensTab");await until(()=>!!p.$(".token-key"));
+  assert.match(p.$("#tokenList").textContent,/1970-01-01 08:00:00/);
+  assert.match(p.$("#tokenList").textContent,/∞ 无限制/);
+  assert.doesNotMatch(p.$("#tokenList").textContent,/聊天/);
+  assert.equal(p.$(".token-more").open,false);
+  assert.ok(p.$('.token-menu [data-token-action="delete"]'));
+  p.click(".token-more summary");await until(()=>p.$(".token-more").open);
+  p.dom.window.document.dispatchEvent(new p.dom.window.KeyboardEvent("keydown",{key:"Escape"}));
+  assert.equal(p.$(".token-more").open,false);
 });
 test("漂亮空态、统计与账号筛选使用真实 DOM，外部文字不注入 HTML",async t=>{
   const p=await page(t,[account({label:'<img src=x onerror="alert(1)">'}),account({id:"b",siteType:"AgentRouter",cookie:"",password:"PASSWORD",hasPassword:true})]);
@@ -298,8 +374,9 @@ test("响应、用户名称和凭据中的括号原样展示",async t=>{
 });
 test("保存成功和复制只显示操作结果",async t=>{
   const p=await page(t,[account()]);p.click('[data-action="edit"]');
+  p.dom.window.document.execCommand=()=>true;
   p.click("#copyJson");await until(()=>!p.$("#toast").hidden);
-  assert.equal(p.$("#toast").textContent,"按 Ctrl+C 复制");
+  assert.equal(p.$("#toast").textContent,"已复制");
   p.event(p.$("#accountForm"),"submit");await until(()=>!p.$("#editor").open);
   assert.equal(p.$("#toast").textContent,"已保存");
 });

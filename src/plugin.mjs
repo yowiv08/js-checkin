@@ -3,7 +3,7 @@ import * as accounts from "./accounts.mjs";
 import { runBatch, refreshBalance } from "./runner.mjs";
 import { DEFAULT_CRON, nextRuns } from "./cron.mjs";
 import { enqueueDue } from "./schedule.mjs";
-export { listTokens, getToken, tokenOptions, tokenKey, createToken, updateToken, setTokenStatus, deleteToken } from "./tokens.mjs";
+export { listTokens, getToken, tokenOptions, tokenKey, issueTokenOperation, createToken, updateToken, setTokenStatus, deleteToken } from "./tokens.mjs";
 
 export const listAccounts = endpoint(accounts.listAccounts);
 export const saveAccount = endpoint(accounts.saveAccount);

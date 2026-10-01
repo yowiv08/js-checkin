@@ -120,11 +120,18 @@ async function detail(service,token) {
   if(value.id!==token)throw new InputError(502,"站点返回的令牌 ID 不匹配");
   return value;
 }
-async function conversion(service) {
+async function conversion(service,fresh=false) {
   const fixed=currencyFor(service.record.config,null);
   if(fixed)return fixed;
+  const key="token-currency:"+service.binding,store=service.ctx.state.shared;
+  if(!fresh){
+    const cached=await store.get(key);
+    if(object(cached)&&Number(cached.until)>Date.now())return cached.value;
+  }
   const meta=await service.request("GET","/api/status",undefined,false);
-  return currencyFor(service.record.config,meta.data);
+  const value=currencyFor(service.record.config,meta.data);
+  await store.set(key,{value,until:Date.now()+60000},{ttlSeconds:60});
+  return value;
 }
 const currencyRevision=(ctx,currency)=>ctx.crypto.sha256(JSON.stringify(currency));
 const currencyView=(ctx,currency)=>currency?{...currency,revision:currencyRevision(ctx,currency)}:null;
@@ -132,10 +139,13 @@ const currencyView=(ctx,currency)=>currency?{...currency,revision:currencyRevisi
 export const listTokens=tokenEndpoint(async ctx=>{
   const query=queryOf(ctx),page=pageNumber(query.page),size=20;
   return withAccount(ctx,query.accountId,async service=>{
-    const first=await service.request("GET",`/api/token/?p=0&size=${size}`);
+    const known=query.format==="array"||query.format==="items"?query.format:null;
+    const requested=known?(known==="array"?page-1:page):0;
+    const first=await service.request("GET",`/api/token/?p=${requested}&size=${size}`);
     const legacy=Array.isArray(first.data);
     if(!legacy&&(!object(first.data)||!Array.isArray(first.data.items)))throw new InputError(502,"站点令牌分页结构不支持");
-    const data=page===1?first.data:(await service.request("GET",`/api/token/?p=${legacy?page-1:page}&size=${size}`)).data;
+    if(known&&known!==(legacy?"array":"items"))throw new InputError(409,"站点分页版本已变化，请重新进入令牌页面");
+    const data=page===1||known?first.data:(await service.request("GET",`/api/token/?p=${legacy?page-1:page}&size=${size}`)).data;
     const items=legacy?data:data?.items;
     if(!Array.isArray(items)||items.length>size||!legacy&&data.page!==String(page))
       throw new InputError(502,"站点返回的令牌分页不匹配");
@@ -143,7 +153,7 @@ export const listTokens=tokenEndpoint(async ctx=>{
     const hasNext=legacy?items.length===size:Number(total)>page*size;
     let currency=null;
     try{currency=await conversion(service);}catch(error){if(cancelled(error)||error instanceof TokenError&&error.code==="AUTH_EXPIRED")throw error;}
-    return {page,pageSize:size,total,hasNext,currency:currencyView(ctx,currency),items:items.map(item=>{
+    return {page,pageSize:size,total,hasNext,format:legacy?"array":"items",currency:currencyView(ctx,currency),items:items.map(item=>{
       const token=revisionToken(service,item);
       return {...token,amount:currency?quotaAmount(token.remain_quota,currency):null,usedAmount:currency?quotaAmount(token.used_quota,currency):null};
     })};
@@ -200,6 +210,16 @@ function operationId(value) {
   if(typeof value!=="string"||!/^\d{13}:[0-9a-f-]{36}$/i.test(value))throw new InputError(400,"操作 ID 无效");
   return value;
 }
+export const issueTokenOperation=tokenEndpoint(async ctx=>{
+  const body=input(ctx.body);
+  return withAccount(ctx,body.accountId,async service=>{
+    const operationId=Date.now()+":"+ctx.crypto.randomUUID();
+    const key="token-operation:"+ctx.crypto.sha256(JSON.stringify([body.accountId,operationId]));
+    if(!await ctx.state.shared.putIfAbsent(key,{state:"Ready",binding:service.binding},{ttlSeconds:604800}))
+      throw new InputError(409,"操作凭证生成冲突，请再次点击");
+    return {operationId};
+  });
+});
 function stable(value) {
   if(Array.isArray(value))return value.map(stable);
   if(object(value))return Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])]));
@@ -228,7 +248,7 @@ async function payload(service,body,current) {
     const quota=input(body.quota);
     if(quota.mode==="quota")value.remain_quota=tokenInteger(quota.value);
     else if(quota.mode==="amount"){
-      const currency=await conversion(service);
+      const currency=await conversion(service,true);
       if(!currency||quota.currencyRevision!==currencyRevision(service.ctx,currency))
         throw new InputError(409,"额度换算信息已变化，请刷新后重新填写");
       value.remain_quota=amountQuota(quota.value,currency);
@@ -255,14 +275,16 @@ function mutate(action) {
       const fingerprint=ctx.crypto.sha256(JSON.stringify(stable({action,token,binding:service.binding,
         changes:body.changes??null,quota:body.quota??null,revision:body.revision??null,status:body.status??null})));
       const store=ctx.state.shared,old=await store.get(key);
-      if(old){
+      const ready=object(old)&&old.state==="Ready";
+      if(ready&&old.binding!==service.binding)throw new InputError(409,"账号配置已变化，请刷新后重试");
+      if(old&&!ready){
         if(old.fingerprint!==fingerprint)throw new InputError(409,"操作 ID 已用于其他请求");
         if(old.state==="Success")return old.result;
         if(old.state==="Rejected")throw new TokenError(old.status,old.error,"BUSINESS_REJECTED");
         throw new TokenError(409,"此写请求结果待核对，请刷新站点状态；不会重新发送","PENDING",true);
       }
       const age=Date.now()-Number(op.split(":")[0]);
-      if(age< -60000||age>600000)throw new InputError(409,"操作 ID 已过期，请重新打开编辑器");
+      if(!ready&&(age< -60000||age>600000))throw new InputError(409,"操作 ID 已过期，请重新打开编辑器");
       let method,path,wire;
       if(action==="create"){
         method="POST";path="/api/token/";wire=await payload(service,body,null);
@@ -277,7 +299,9 @@ function mutate(action) {
       }
       await service.open();await service.touch();
       const pending={state:"Pending",fingerprint};
-      if(!await store.putIfAbsent(key,pending,{ttlSeconds:604800}))throw new InputError(409,"操作已提交，请刷新状态");
+      const claimed=ready?await store.compareExchange(key,old,pending,{ttlSeconds:604800})
+        :await store.putIfAbsent(key,pending,{ttlSeconds:604800});
+      if(!claimed)throw new InputError(409,"操作已提交，请刷新状态");
       try{
         await service.request(method,path,wire);
       }catch(error){

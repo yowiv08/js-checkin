@@ -37,7 +37,7 @@ const rows=[
     enabled:false,available:false,autoCheckIn:false,cookie:"",username:"demo2@example.test",password:"DEMO_ONLY",hasCookie:false,hasPassword:true}
 ].map(row=>({...defaults,...row}));
 const demoToken={id:"9007199254740993",name:"工作项目 · API",status:"1",group:"default",remain_quota:"9007199254740993",used_quota:"15000",
-  expired_time:"-1",unlimited_quota:false,model_limits_enabled:true,model_limits:["gpt-a"],allow_ips:"",revision:"demo",amount:null,usedAmount:null};
+  created_time:"1789779183",expired_time:"-1",unlimited_quota:false,model_limits_enabled:true,model_limits:["gpt-a"],allow_ips:"",revision:"demo",amount:null,usedAmount:null};
 const demoOptions={groups:[{value:"default",label:"默认分组"}],models:["gpt-a","gpt-b"],groupsLoaded:true,modelsLoaded:true,
   currency:{unit:"USD",quotaPerUnit:"500000",rate:"1",revision:"demo"},errors:[]};
 const mock=`<script>window.Router2API={request:async(method,route,body)=>{
@@ -45,6 +45,7 @@ const mock=`<script>window.Router2API={request:async(method,route,body)=>{
   if(route.startsWith("tokens/list?"))return{page:1,total:null,hasNext:false,currency:null,items:[${JSON.stringify(demoToken)}]};
   if(route.startsWith("tokens/detail?"))return{token:${JSON.stringify(demoToken)}};
   if(route.startsWith("tokens/options?"))return ${JSON.stringify(demoOptions)};
+  if(route==="tokens/key"){await new Promise(r=>setTimeout(r,250));return{key:"sk-OFFLINE_COPY_ONLY"};}
   if(route==="schedule/preview")return{cron:"0 10 10 * * *",next:["2026-10-01T02:10:00Z"]};throw Error("离线演示不会执行签到或令牌写入")}};</script>`;
 const version=JSON.parse(await fs.readFile(path.join(root,"plugin.json"),"utf8")).version;
 const html=(await renderPage(root)).replace("</head>",mock+"</head>").replace(`>v${version}<`,`>演示数据 · v${version}<`);
@@ -112,6 +113,9 @@ try{
   for(let i=0;i<100;i++){if(await evaluate("!!document.querySelector('.token-key')"))break;await wait(50)}
   assert.equal(await evaluate("document.querySelector('.token-key').value"),"••••••••••••");
   await noOverflow();await screenshot("tokens-desktop");
+  await evaluate("document.querySelector('.token-more summary').click()");
+  await wait(100);await screenshot("tokens-menu");
+  await evaluate("document.querySelector('.token-more summary').click()");
   await evaluate("document.querySelector('[data-token-action=\"edit\"]').click()");
   for(let i=0;i<100;i++){if(await evaluate("!document.querySelector('#tokenSave').disabled"))break;await wait(50)}
   assert.equal(await evaluate("document.querySelector('#tokenForm [name=\"quotaValue\"]').value"),"18014398509.481986");
@@ -142,6 +146,14 @@ try{
     contextId=(await send("Page.createIsolatedWorld",{frameId:frame.id,worldName:"ui-test"})).executionContextId;
   }
   assert.equal(await evaluate("document.querySelectorAll('article.account').length",contextId),6);
+  await evaluate("document.querySelector('[data-action=\"tokens\"]').click()",contextId);
+  for(let i=0;i<100;i++){if(await evaluate("!!document.querySelector('.token-key')",contextId))break;await wait(50)}
+  await evaluate("document.addEventListener('copy',()=>{window.__copied=document.activeElement.value});document.querySelector('[data-token-action=\"copy\"]').click()",contextId);
+  for(let i=0;i<100;i++){if(await evaluate("window.__copied==='sk-OFFLINE_COPY_ONLY'",contextId))break;await wait(50)}
+  assert.equal(await evaluate("window.__copied",contextId),"sk-OFFLINE_COPY_ONLY","宿主沙箱应自动执行复制，无需 Ctrl+C");
+  assert.equal(await evaluate("document.querySelector('#tokenPageError').textContent",contextId),"");
+  assert.equal(await evaluate("document.querySelector('.token-key').hidden",contextId),true);
+  await evaluate("document.querySelector('#accountsTab').click()",contextId);
   await evaluate("document.querySelector('[data-action=\"delete\"]').click()",contextId);
   assert.equal(await evaluate("document.querySelector('#confirmation').open",contextId),true);
   await evaluate("document.querySelector('#rejectConfirm').click();document.querySelector('[data-action=\"edit\"]').click()",contextId);

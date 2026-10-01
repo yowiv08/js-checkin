@@ -5,11 +5,12 @@ export function mount({api,notify,ask}) {
   let accounts=[],selected="",view=false,epoch=0,loading=false,acting=false,page=1,data=null,editing=null,options=null;
   let selectedModels=new Set(),quotaMode="quota",originalQuota="",quotaDirty=false,editorEpoch=0,submitted=null;
   const keys=new Map(),operations=new Map();
+  let optionCache=null;
   const node=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;};
   const query=(route,extra={})=>route+"?"+new URLSearchParams({accountId:selected,...extra}).toString();
   const active=()=>accounts.find(a=>a.id===selected)?.available;
   const errorText=error=>String(error?.message||"操作失败");
-  const operation=()=>Date.now()+":"+crypto.randomUUID();
+  const operation=async accountId=>(await api("POST","tokens/operation",{accountId})).operationId;
   function buttons(){
     const busy=loading||acting;
     $("#tokenRefresh").disabled=busy||!active();
@@ -20,11 +21,11 @@ export function mount({api,notify,ask}) {
   }
   function clearKeys(){
     keys.clear();
-    $("#tokenList").querySelectorAll(".token-key").forEach(el=>el.value="••••••••••••");
-    $("#tokenList").querySelectorAll('[data-token-action="show"]').forEach(el=>el.textContent="显示");
+    $("#tokenList").querySelectorAll(".token-key").forEach(el=>{el.value="••••••••••••";el.hidden=true;});
+    $("#tokenList").querySelectorAll('[data-token-action="show"]').forEach(el=>el.textContent="查看密钥");
   }
   function invalidate(){
-    epoch++;editorEpoch++;clearKeys();loading=false;acting=false;data=null;
+    epoch++;editorEpoch++;clearKeys();loading=false;acting=false;data=null;optionCache=null;
     editor.close();form.reset();editing=null;options=null;submitted=null;selectedModels.clear();
     $("#tokenModels").replaceChildren();$("#tokenList").replaceChildren();
     $("#tokenPageLabel").textContent="";$("#tokenPageError").textContent="";
@@ -61,21 +62,33 @@ export function mount({api,notify,ask}) {
     clearKeys();const root=$("#tokenList");root.replaceChildren();
     if(!data?.items?.length){root.append(node("div","empty",active()?"暂无令牌":"请选择已启用的账号"));buttons();return;}
     const wrap=node("div","token-table-wrap"),table=node("table","token-table"),head=node("thead"),headRow=node("tr"),body=node("tbody");
-    for(const label of ["名称 / 密钥","状态","分组","剩余 / 已用额度","过期时间 · UTC+8","操作"])headRow.append(node("th","",label));
+    for(const label of ["名称","状态 / 分组","已用额度","剩余额度","创建时间 · UTC+8","过期时间 · UTC+8","操作"])headRow.append(node("th","",label));
     head.append(headRow);table.append(head,body);wrap.append(table);root.append(wrap);
     for(const item of data.items){
       const row=node("tr");row.dataset.tokenId=item.id;
       const name=node("td"),key=node("input","token-key");key.readOnly=true;key.autocomplete="off";key.spellcheck=false;key.value="••••••••••••";key.setAttribute("aria-label","令牌密钥");
-      name.append(node("strong","",item.name),key);
+      key.hidden=true;name.append(node("strong","",item.name),key);
       const state=node("td");state.append(node("span","token-status"+(item.status==="1"?"":" disabled"),({"1":"已启用","2":"已禁用","3":"已过期","4":"已耗尽"})[item.status]||"未知"));
-      const quota=node("td"),remaining=item.unlimited_quota?"无限额度":item.amount!==null&&item.amount!==undefined?item.amount+" "+(data.currency?.unit||""):item.remain_quota+" quota";
-      quota.append(node("div","",remaining),node("small","token-quota-note","已用 "+(item.usedAmount??item.used_quota)+(item.usedAmount!=null?" "+data.currency.unit:" quota")));
+      state.append(node("span","token-group",item.group||"用户分组"));
+      const quota=node("td"),remaining=item.unlimited_quota?"∞ 无限制":item.amount!==null&&item.amount!==undefined?item.amount+" "+(data.currency?.unit||""):item.remain_quota+" quota";
+      quota.append(node("span","token-remaining",remaining));
+      const used=node("td");used.append(node("span","token-used",(item.usedAmount??item.used_quota)+(item.usedAmount!=null?" "+data.currency.unit:" quota")));
       const actions=node("td"),group=node("div","actions");
-      for(const [action,label]of [["show","显示"],["copy","复制"],["edit","编辑"],["status",item.status==="1"?"禁用":"启用"],["delete","删除"]]){
-        const button=node("button",action==="delete"?"danger":"",label);button.type="button";button.dataset.tokenAction=action;
-        button.onclick=()=>act(action,item,row);group.append(button);
+      const more=node("details","token-more"),summary=node("summary","","•••"),menu=node("div","token-menu");
+      summary.setAttribute("aria-label","更多操作");menu.setAttribute("role","group");more.append(summary,menu);
+      more.addEventListener("toggle",()=>{
+        if(!more.open)return;
+        root.querySelectorAll(".token-more").forEach(el=>{if(el!==more)el.open=false;});
+        const rect=summary.getBoundingClientRect(),height=140;
+        menu.style.left=Math.max(8,Math.min(rect.right-130,window.innerWidth-138))+"px";
+        menu.style.top=(rect.bottom+height>window.innerHeight?Math.max(8,rect.top-height):rect.bottom+5)+"px";
+      });
+      for(const [action,label]of [["copy","复制"],["edit","编辑"],["show","查看密钥"],["delete","删除"],["status",item.status==="1"?"禁用":"启用"]]){
+        const button=node("button",action==="delete"?"danger":action==="copy"?"token-copy":"",label);button.type="button";button.dataset.tokenAction=action;
+        button.onclick=()=>{more.open=false;act(action,item,row);};(action==="copy"||action==="edit"?group:menu).append(button);
       }
-      actions.append(group);row.append(name,state,node("td","",item.group||"账号分组"),quota,node("td","",item.expired_time==="-1"?"永不过期":expiryDisplay(item.expired_time).replace("T"," ")),actions);body.append(row);
+      group.append(more);actions.append(group);
+      row.append(name,state,used,quota,node("td","token-date",item.created_time?expiryDisplay(item.created_time).replace("T"," "):"—"),node("td","token-date",item.expired_time==="-1"?"永不过期":expiryDisplay(item.expired_time).replace("T"," ")),actions);body.append(row);
     }
     buttons();
   }
@@ -83,7 +96,7 @@ export function mount({api,notify,ask}) {
     if(!selected||!active()){data=null;page=1;render();return;}
     const ticket=++epoch;clearKeys();loading=true;$("#tokenPageError").textContent="";buttons();
     try{
-      const result=await api("GET",query("tokens/list",{page:String(nextPage)}));
+      const result=await api("GET",query("tokens/list",{page:String(nextPage),...(data?.format?{format:data.format}:{})}));
       if(ticket!==epoch)return;
       data=result;page=result.page;render();
       $("#tokenPageLabel").textContent=`第 ${page} 页${result.total===null?"":" · 共 "+result.total+" 条"}`;
@@ -93,14 +106,14 @@ export function mount({api,notify,ask}) {
       $("#tokenList").replaceChildren(node("div","empty","令牌读取失败"));$("#tokenPageLabel").textContent="";
     }finally{if(ticket===epoch){loading=false;buttons();}}
   }
-  $("#tokenRefresh").onclick=()=>load(page);
+  $("#tokenRefresh").onclick=()=>{optionCache=null;load(page);};
   $("#tokenPrev").onclick=()=>load(page-1);$("#tokenNext").onclick=()=>load(page+1);
   async function act(action,item,row){
     if(loading||acting)return;
-    if(action==="edit"){await openEditor(item.id);return;}
+    if(action==="edit"){await openEditor(item);return;}
     if(action==="show"&&keys.has(item.id)){
-      keys.delete(item.id);row.querySelector(".token-key").value="••••••••••••";
-      row.querySelector('[data-token-action="show"]').textContent="显示";return;
+      keys.delete(item.id);row.querySelector(".token-key").value="••••••••••••";row.querySelector(".token-key").hidden=true;
+      row.querySelector('[data-token-action="show"]').textContent="查看密钥";return;
     }
     const ticket=epoch,accountId=selected;
     if(action==="delete"&&!await ask(`删除令牌“${item.name}”？此操作无法撤销。`))return;
@@ -108,30 +121,28 @@ export function mount({api,notify,ask}) {
     acting=true;buttons();$("#tokenPageError").textContent="";
     try{
       if(action==="show"||action==="copy"){
-        const key=keys.get(item.id)??(await api("POST","tokens/key",{accountId,tokenId:item.id})).key;
+        const getKey=async()=>keys.get(item.id)??(await api("POST","tokens/key",{accountId,tokenId:item.id})).key;
+        if(action==="copy"){
+          await copyText(getKey,()=>ticket===epoch);
+          if(ticket===epoch)notify("密钥已复制");
+          return;
+        }
+        const key=await getKey();
         if(ticket!==epoch)return;
         if(action==="show"){
-          keys.set(item.id,key);row.querySelector(".token-key").value=key;
+          keys.set(item.id,key);row.querySelector(".token-key").value=key;row.querySelector(".token-key").hidden=false;
           row.querySelector('[data-token-action="show"]').textContent="隐藏";
-        }else{
-          try{
-            if(!navigator.clipboard?.writeText)throw Error("clipboard unavailable");
-            await navigator.clipboard.writeText(key);
-            if(ticket===epoch)notify("密钥已复制");
-          }catch{
-            if(ticket!==epoch)return;
-            keys.set(item.id,key);const input=row.querySelector(".token-key");input.value=key;input.focus();input.select();
-            row.querySelector('[data-token-action="show"]').textContent="隐藏";notify("按 Ctrl+C 复制密钥");
-          }
         }
       }else{
         const cacheKey=JSON.stringify([accountId,action,item.id,item.revision]);
-        if(!operations.has(cacheKey))operations.set(cacheKey,operation());
+        if(!operations.has(cacheKey))operations.set(cacheKey,await operation(accountId));
+        if(ticket!==epoch)return;
         const result=await api("POST","tokens/"+action,{
           accountId,tokenId:item.id,revision:item.revision,operationId:operations.get(cacheKey),
           ...(action==="status"?{status:item.status==="1"?"2":"1"}:{})
         });
         if(ticket!==epoch)return;
+        operations.delete(cacheKey);
         notify(result.warning||result.message);acting=false;
         await load(action==="delete"?1:page);
       }
@@ -167,18 +178,17 @@ export function mount({api,notify,ask}) {
     field("expires").disabled=field("neverExpires").checked;
     renderModels();quotaNote();
   }
-  async function openEditor(tokenId=null){
+  async function openEditor(token=null){
     if(loading||acting||!active())return;
     const ticket=epoch,editTicket=++editorEpoch;
     loading=true;buttons();editing=null;options=null;submitted=null;quotaDirty=false;selectedModels.clear();
     form.reset();$("#tokenFields").disabled=true;$("#tokenSave").disabled=true;
     $("#tokenFormError").textContent="";$("#tokenOptionWarning").textContent="正在加载…";$("#tokenModels").replaceChildren();
-    $("#tokenEditorTitle").textContent=tokenId?"编辑令牌":"新建令牌";editor.showModal();
+    $("#tokenEditorTitle").textContent=token?"编辑令牌":"新建令牌";editor.showModal();
     try{
-      const token=tokenId?(await api("GET",query("tokens/detail",{tokenId}))).token:null;
+      const settings=optionCache&&performance.now()<optionCache.until?optionCache.value:await api("GET",query("tokens/options"));
       if(ticket!==epoch||editTicket!==editorEpoch)return;
-      const settings=await api("GET",query("tokens/options"));
-      if(ticket!==epoch||editTicket!==editorEpoch)return;
+      if(settings.groupsLoaded&&settings.modelsLoaded)optionCache={value:settings,until:performance.now()+60000};
       editing=token;options=settings;
       const value=token||defaults();
       for(const name of ["name","allow_ips"])field(name).value=value[name];
@@ -250,8 +260,13 @@ export function mount({api,notify,ask}) {
       if(editing&&!Object.keys(changes).length&&!quota){notify("没有修改任何字段");return;}
       const body={accountId:selected,changes,...(quota?{quota}:{}),...(editing?{tokenId:editing.id,revision:editing.revision}:{})};
       const fingerprint=JSON.stringify(body);
-      if(!submitted||submitted.fingerprint!==fingerprint)submitted={fingerprint,operationId:operation()};
       acting=true;buttons();$("#tokenSave").disabled=true;$("#tokenFields").disabled=true;
+      if(!submitted||submitted.fingerprint!==fingerprint){
+        const operationId=await operation(selected);
+        if(ticket!==epoch||editTicket!==editorEpoch)return;
+        submitted={fingerprint,operationId};
+      }
+      if(ticket!==epoch||editTicket!==editorEpoch)return;
       const result=await api("POST",editing?"tokens/update":"tokens/create",{...body,operationId:submitted.operationId});
       if(ticket!==epoch||editTicket!==editorEpoch)return;
       acting=false;closeEditor();notify(result.warning||result.message);await load(1);
@@ -263,6 +278,35 @@ export function mount({api,notify,ask}) {
   });
   window.addEventListener("pagehide",()=>{invalidate();operations.clear();});
   document.addEventListener("visibilitychange",()=>{if(document.hidden){clearKeys();}});
+  document.addEventListener("click",event=>{$("#tokenList").querySelectorAll(".token-more[open]").forEach(el=>{if(!el.contains(event.target))el.open=false;});});
+  document.addEventListener("keydown",event=>{if(event.key==="Escape")$("#tokenList").querySelectorAll(".token-more[open]").forEach(el=>el.open=false);});
+  $("#tokenList").addEventListener("scroll",()=>$("#tokenList").querySelectorAll(".token-more[open]").forEach(el=>el.open=false),true);
   buttons();
   return {setAccounts,open:showTokens};
+}
+
+export async function copyText(getKey,isCurrent){
+  const value=Promise.resolve().then(getKey);
+  // 在点击处理期间申请剪贴板写入，密钥随后异步填入。
+  let nativeWrite=null;
+  if(navigator.clipboard?.write&&typeof ClipboardItem!=="undefined"){
+    const blob=value.then(key=>{if(!isCurrent())throw Error("账号已切换");return new Blob([key],{type:"text/plain"});});
+    blob.catch(()=>{});
+    try{nativeWrite=navigator.clipboard.write([new ClipboardItem({"text/plain":blob})]).then(()=>true,()=>false);}catch{}
+  }
+  const key=await value;
+  if(!isCurrent())return;
+  if(nativeWrite&&await nativeWrite)return;
+  if(!isCurrent())return;
+  try{
+    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(key);return;}
+  }catch{}
+  if(!isCurrent())return;
+  const previous=document.activeElement,input=document.createElement("textarea");
+  input.value=key;input.setAttribute("aria-label","复制内容");input.style.cssText="position:fixed;left:-9999px;top:0;opacity:0";
+  (document.querySelector("dialog[open]")||document.body).append(input);
+  try{
+    input.focus();input.select();
+    if(!document.execCommand?.("copy"))throw Error("浏览器阻止了剪贴板写入，请允许剪贴板权限后再次点击复制");
+  }finally{input.value="";input.remove();previous?.focus();}
 }

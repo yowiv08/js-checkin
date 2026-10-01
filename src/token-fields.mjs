@@ -15,6 +15,7 @@ export function tokenView(value) {
     expired_time:tokenInteger(value.expired_time,"过期时间",true),
     remain_quota:tokenInteger(value.remain_quota,"剩余额度",true),
     used_quota:tokenInteger(value.used_quota??"0","已用额度",true),
+    created_time:value.created_time==null?null:tokenInteger(value.created_time,"创建时间"),
     unlimited_quota:value.unlimited_quota,model_limits_enabled:value.model_limits_enabled,
     model_limits:value.model_limits?value.model_limits.split(","):[],allow_ips:value.allow_ips??""
   };
