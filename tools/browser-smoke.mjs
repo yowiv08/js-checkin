@@ -99,6 +99,13 @@ try{
   assert.equal(await evaluate("document.querySelector('#editor').open"),true);
   assert.equal(await evaluate("document.querySelector('#editorTitle').textContent"),"账号编辑");
   assert.equal(await evaluate("document.querySelector('#providerHint')"),null);
+  await evaluate("document.querySelector('[name=\"authMode\"]').value='password';document.querySelector('[name=\"authMode\"]').dispatchEvent(new Event('change'));");
+  assert.equal(await evaluate("document.querySelector('.agent-field').hidden"),false);
+  assert.equal(await evaluate("document.querySelector('.cookie-field').hidden"),true);
+  await evaluate("document.querySelector('[name=\"username\"]').value='demo-login';document.querySelector('[name=\"password\"]').value='DEMO_ONLY'");
+  await screenshot("editor-password");
+  await evaluate("document.querySelector('[name=\"authMode\"]').value='cookie';document.querySelector('[name=\"authMode\"]').dispatchEvent(new Event('change'));document.querySelector('[name=\"cookie\"]').value='session=DEMO_ONLY';document.querySelector('[name=\"userId\"]').value='1024';");
+  assert.equal(await evaluate("document.querySelector('[name=\"password\"]').value"),"");
   assert.equal(await evaluate("document.querySelector('[name=\"cron\"]')"),null);
   await evaluate("document.querySelector('#previewCron').click()");
   for(let i=0;i<30;i++){if(await evaluate("document.querySelector('#cronPreview').textContent.includes('2026')"))break;await wait(50)}

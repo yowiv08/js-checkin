@@ -1,10 +1,10 @@
 import {
   InputError, day, enabled, acquire, renew, release, accountLock,
-  cancelled, errorMessage, STATUS_LABELS
+  cancelled, errorMessage, STATUS_LABELS, passwordAuth
 } from "./common.mjs";
-import { readAccount, persist, persistBalance, readAgentSession, persistAgentSession } from "./accounts.mjs";
-import { requestFor, interpret, businessAccepted } from "./adapters.mjs";
-import { readBalance, agentSession } from "./balance.mjs";
+import { readAccount, persist, persistBalance, readAgentSession, persistAgentSession, forgetAgentSession } from "./accounts.mjs";
+import { requestFor, loginRequest, interpret, businessAccepted } from "./adapters.mjs";
+import { readBalance, agentSession, requireAgentSession, exactJson } from "./balance.mjs";
 import { scheduleStamp } from "./schedule.mjs";
 import { cronMatches, DEFAULT_CRON } from "./cron.mjs";
 import { prepareWaf } from "./waf.mjs";
@@ -78,7 +78,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     const origin = ctx.url.parse(record.config.baseUrl).origin;
     if (!(await ctx.http.approvedOrigins()).includes(origin))
       throw new InputError(403, "站点 origin 未授权，未发送签到请求");
-    if (record.config.siteType === "AgentRouter") {
+    if (passwordAuth(record.config)) {
       gate = await waitForAgent(ctx, record.config, lease);
       if (!gate) return finish("Skipped", "同站点已有登录任务，未并发发送");
     }
@@ -103,10 +103,53 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     await renew(ctx, lease);
     if (gate) await renew(ctx, gate);
     dispatched = true;
-    const {route, ...spec} = requestFor(prepared.config);
+    let session = null;
+    let checkinConfig = prepared.config;
+    if (passwordAuth(record.config) && record.config.siteType !== "AgentRouter") {
+      const {route:loginRoute,...loginSpec} = loginRequest(prepared.config);
+      let loginResponse;
+      try { loginResponse = await client.request(loginSpec); }
+      catch(error) {
+        if(cancelled(error))throw error;
+        const safe = new InputError(503,"登录请求失败或超时，未自动重试；尚未发送签到");
+        if(["host.denied","host.proxy_pool_unavailable"].includes(error?.code))dispatched=false;
+        throw safe;
+      }
+      const result = interpret("NewAPI",loginResponse);
+      let loginData;
+      try { loginData = exactJson(loginResponse.bodyText); } catch {}
+      if (!businessAccepted(loginResponse) || loginData?.error != null && loginData.error !== false ||
+          loginData?.data?.require_2fa || loginData?.data?.requires_2fa || loginData?.data?.two_factor_required ||
+          loginData?.require_2fa || result.status === "Challenge") {
+        const status = result.status === "Challenge" || loginData?.data?.require_2fa || loginData?.data?.requires_2fa ||
+          loginData?.data?.two_factor_required || loginData?.require_2fa ? "Challenge"
+          : ["AuthExpired","RateLimited","Uncertain"].includes(result.status) ? result.status : "Failed";
+        outcome = finish(status,"登录未完成，未发送签到；请检查凭据、验证码或二次验证",{httpStatus:loginResponse.statusCode});
+        if(status==="AuthExpired")await forgetAgentSession(ctx,record);
+        await renew(ctx,lease);await persist(ctx,record,outcome,null,attemptId);
+        return outcome;
+      }
+      try {
+        session = agentSession(prepared.config,loginResponse);
+        const path = ctx.url.parse(record.config.baseUrl).path.replace(/\/$/,"") +
+          (record.config.siteType === "AnyRouter" ? "/api/user/sign_in" : "/api/user/checkin");
+        requireAgentSession(session,path);
+      } catch {
+        outcome = finish("Failed","登录响应未提供完整且路径适用的会话，未发送签到",{httpStatus:loginResponse.statusCode});
+        await renew(ctx,lease);await persist(ctx,record,outcome,null,attemptId);
+        return outcome;
+      }
+      await renew(ctx,lease);
+      record.credential.fields.balanceSession = await persistAgentSession(ctx,record,session);
+      await renew(ctx,lease);if(gate)await renew(ctx,gate);
+      if (!(await ctx.http.approvedOrigins()).includes(origin)) throw new InputError(403,"站点 origin 已撤销，未发送签到");
+      checkinConfig = {...prepared.config,...session};
+    }
+    const {route, ...spec} = requestFor(checkinConfig);
     const response = await client.request(spec);
-    const interpreted = interpret(record.config.siteType, response);
+    const interpreted = interpret(record.config.siteType === "AgentRouter" && !passwordAuth(record.config) ? "NewAPI" : record.config.siteType, response);
     outcome = finish(interpreted.status, interpreted.message, { httpStatus: interpreted.httpStatus });
+    if(passwordAuth(record.config)&&outcome.status==="AuthExpired")await forgetAgentSession(ctx,record);
     const sameDay = day(Date.parse(startedAt)) === day();
     try {
       await renew(ctx, lease);
@@ -120,8 +163,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
       ["Success","Already"].includes(outcome.status) ||
       outcome.status === "Uncertain" && businessAccepted(response)
     );
-    let session = null;
-    if (record.config.siteType === "AgentRouter" && accepted && !outcome.warning) {
+    if (record.config.siteType === "AgentRouter" && passwordAuth(record.config) && accepted && !outcome.warning) {
       try { session = agentSession(prepared.config,response); }
       catch (error) { if (cancelled(error)) throw error; }
       try {
@@ -182,7 +224,7 @@ export async function refreshBalance(ctx, accountId) {
       throw new InputError(403,"origin 未授权，未查询余额");
     let update;
     try {
-      const session = current.config.siteType === "AgentRouter" ? readAgentSession(ctx,current) : null;
+      const session = passwordAuth(current.config) ? readAgentSession(ctx,current) : null;
       client = await ctx.http.createClient({route:current.config.route,allowDirectFallback:false});
       const prepared = await prepareWaf(ctx,current.config,client,()=>renew(ctx,lease));
       update = prepared.error ? {checkedAt:new Date().toISOString(),error:prepared.error.message}
@@ -190,7 +232,7 @@ export async function refreshBalance(ctx, accountId) {
     } catch (error) {
       if (cancelled(error)) throw error;
       update = {checkedAt:new Date().toISOString(),error:errorMessage(error),
-        ...(current.config.siteType === "AgentRouter" && error instanceof InputError && error.status === 401 ? {authExpired:true} : {})};
+        ...(passwordAuth(current.config) && error instanceof InputError && error.status === 401 ? {authExpired:true} : {})};
     }
     await renew(ctx,lease);
     const balance = await persistBalance(ctx,current,update);

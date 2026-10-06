@@ -63,7 +63,7 @@
 </head>
 <body>
 <main class="app">
-  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.2.1</span></header>
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.3.0</span></header>
   <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询、API 令牌</p></div><div class="schedule"><small><span class="live"></span>统一签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
   <nav class="tabs workspace-nav" aria-label="工作台模块"><button id="accountsTab" class="active" aria-pressed="true">签到账号</button><button id="tokensTab" aria-pressed="false">API 令牌</button></nav>
   <section id="accountsPage">
@@ -97,11 +97,12 @@
         <label class="field"><span>账号备注</span><input name="label" maxlength="128" placeholder="账号名称" required></label>
         <label class="field"><span>站点类型</span><select name="siteType"><option value="NewAPI">New API</option><option value="AnyRouter">AnyRouter</option><option value="AgentRouter">AgentRouter</option></select></label>
         <label class="field wide"><span>站点地址</span><input name="baseUrl" placeholder="https://你的站点" required></label>
+        <label class="field wide"><span>认证方式</span><select name="authMode"><option value="cookie">Cookie / CK</option><option value="password">账号密码</option></select></label>
         <label class="field cookie-field wide"><span>Cookie</span><textarea name="cookie" rows="3" spellcheck="false" placeholder="session=…" autocomplete="off"></textarea></label>
         <label class="field cookie-field"><span>User ID</span><input name="userId" inputmode="numeric" placeholder="请求头 New-Api-User 的值"></label>
-        <label class="field cookie-field"><span>User-Agent</span><input name="userAgent" placeholder="选填"></label>
         <label class="field agent-field" hidden><span>用户名或邮箱</span><input name="username" autocomplete="off"></label>
         <label class="field agent-field" hidden><span>密码</span><input name="password" type="text" autocomplete="off" spellcheck="false"></label>
+        <label class="field"><span>User-Agent</span><input name="userAgent" placeholder="选填"></label>
         <label class="field wide"><span>网络路线</span><select name="route"><option value="direct">直连</option><option value="pool">代理池</option></select></label>
         <div class="field wide"><span>统一自动签到时间</span><span>每天 10:10 · UTC+8</span></div>
         <div class="form-switches wide"><label class="toggle"><input type="checkbox" name="enabled" checked>启用账号</label><label class="toggle"><input type="checkbox" name="autoCheckIn">自动签到</label><label class="toggle"><input type="checkbox" name="queryBalance" checked>签到后更新余额</label></div>
@@ -151,7 +152,8 @@
 (() => {
   "use strict";
   const $ = selector => document.querySelector(selector), form = $("#accountForm"), editor = $("#editor");
-  const fields = ["label","siteType","baseUrl","cookie","userId","userAgent","username","password","route","enabled","autoCheckIn","queryBalance"];
+  const fields = ["label","siteType","authMode","baseUrl","cookie","userId","userAgent","username","password","route","enabled","autoCheckIn","queryBalance"];
+  const authModeOf=value=>value?.authMode??(value?.username&&!value?.cookie||value?.siteType==="AgentRouter"?"password":"cookie");
   const names = {NewAPI:"New API",AnyRouter:"AnyRouter",AgentRouter:"AgentRouter"};
   const defaults = {NewAPI:"",AnyRouter:"https://anyrouter.top",AgentRouter:"https://agentrouter.org"};
   const statuses = {Success:"签到成功",Already:"今日已签到",Skipped:"已跳过",AuthExpired:"认证失效",Challenge:"需要人机验证",RateLimited:"请求限流",Failed:"签到失败",Uncertain:"结果不确定"};
@@ -200,7 +202,7 @@
       if(a.balance?.error)balance.append(node("div","balance-note stale",messageText(a.balance.error)));
       const schedule=node("div","card-schedule");schedule.append(node("span","",a.autoCheckIn?"◷ 每天 10:10 · UTC+8":"◷ 自动未开启"));
       const toggles=node("div","toggles");if(!a.invalid)toggles.append(toggle("已启用","enabled",a),toggle("自动签到","autoCheckIn",a));
-      const buttons=node("div","card-actions"),run=action(a.siteType==="AgentRouter"?"登录并签到":"立即签到","run",a,"run");run.dataset.available=String(!!a.available);
+      const buttons=node("div","card-actions"),run=action(authModeOf(a)==="password"?"登录并签到":"立即签到","run",a,"run");run.dataset.available=String(!!a.available);
       buttons.append(run);if(!a.invalid)buttons.append(action("令牌","tokens",a),action("编辑","edit",a));buttons.append(action("删除","delete",a,"danger"));card.append(head,meta,balance,result,schedule,toggles,buttons);cards.append(card);
     }activeButtons();
   }
@@ -210,8 +212,8 @@
     catch(error){notify(error.message||"读取账号失败",true);if(!accounts.length){const empty=node("div","empty");empty.append(node("strong","","读取账号失败"),node("p","",messageText(error.message||"宿主连接失败")));$("#cards").replaceChildren(empty)}}
     finally{$("#refresh").disabled=false}
   }
-  function emptyConfig(){return{label:"",siteType:"NewAPI",baseUrl:"",cookie:"",userId:"",userAgent:"",username:"",password:"",route:"direct",enabled:true,autoCheckIn:false,queryBalance:true}}
-  function configOf(account){const value=emptyConfig();for(const key of fields)if(account?.[key]!==undefined)value[key]=account[key];return value}
+  function emptyConfig(){return{label:"",siteType:"NewAPI",authMode:"cookie",baseUrl:"",cookie:"",userId:"",userAgent:"",username:"",password:"",route:"direct",enabled:true,autoCheckIn:false,queryBalance:true}}
+  function configOf(account){const value=emptyConfig();for(const key of fields)if(account?.[key]!==undefined)value[key]=account[key];value.authMode=authModeOf(account);return value}
   function setVisual(value){for(const key of fields){const field=form.elements.namedItem(key);if(field.type==="checkbox")field.checked=value[key];else field.value=value[key]??""}showProvider()}
   function visual(){const value={};for(const key of fields){const field=form.elements.namedItem(key);value[key]=field.type==="checkbox"?field.checked:field.value}return value}
   function parseConfig(text){
@@ -220,12 +222,13 @@
     delete value.cron;
     const unknown=Object.keys(value).filter(key=>!fields.includes(key));if(unknown.length)throw Error("包含不支持的配置字段："+unknown.join("、"));
     const merged={...emptyConfig(),...value};if(!names[merged.siteType])throw Error("siteType 只能是 NewAPI、AnyRouter 或 AgentRouter");
+    merged.authMode=authModeOf(value);if(!["cookie","password"].includes(merged.authMode))throw Error("authMode 只能是 cookie 或 password");
     for(const key of fields){if(typeof merged[key]!==(["enabled","autoCheckIn","queryBalance"].includes(key)?"boolean":"string"))throw Error(key+" 类型不正确")}
     return merged;
   }
   function current(){return mode==="json"?parseConfig($("#jsonText").value):visual()}
   function showProvider(){
-    const agent=form.elements.siteType.value==="AgentRouter";
+    const agent=form.elements.authMode.value==="password";
     document.querySelectorAll(".cookie-field").forEach(e=>e.hidden=agent);document.querySelectorAll(".agent-field").forEach(e=>e.hidden=!agent);
   }
   function switchMode(next){
@@ -237,7 +240,7 @@
   function validate(value){
     if(!value.label.trim())throw Error("请填写账号备注");
     if(!/^https:\/\//i.test(value.baseUrl.trim()))throw Error("请填写 HTTPS 站点地址");
-    if(value.siteType==="AgentRouter"){if(!value.username.trim())throw Error("请填写用户名或邮箱");if(!value.password&&!editing?.hasPassword)throw Error("请填写密码")}
+    if(value.authMode==="password"){if(!value.username.trim())throw Error("请填写用户名或邮箱");if(!value.password&&!editing?.hasPassword)throw Error("请填写密码")}
     else{if(!/^[1-9]\d{0,39}$/.test(value.userId))throw Error("User ID 必须是正整数字符串");if(!value.cookie&&!editing?.hasCookie)throw Error("请填写 Cookie")}
   }
   form.addEventListener("submit",async event=>{
@@ -247,7 +250,8 @@
       saving=false;closeEditor();notify("已保存");await load();
     }catch(error){$("#formError").textContent=messageText(error.message||"保存失败")}finally{saving=false;$("#save").disabled=false}
   });
-  form.elements.siteType.addEventListener("change",()=>{const type=form.elements.siteType.value;form.elements.baseUrl.value=defaults[type];for(const key of ["cookie","userId","password","username","userAgent"])form.elements[key].value="";form.elements.approveOrigin.checked=false;showProvider()});
+  form.elements.siteType.addEventListener("change",()=>{const type=form.elements.siteType.value;form.elements.authMode.value=type==="AgentRouter"?"password":"cookie";form.elements.baseUrl.value=defaults[type];for(const key of ["cookie","userId","password","username","userAgent"])form.elements[key].value="";form.elements.approveOrigin.checked=false;showProvider()});
+  form.elements.authMode.addEventListener("change",()=>{for(const key of ["cookie","userId","password","username"])form.elements[key].value="";showProvider()});
   form.elements.baseUrl.addEventListener("input",()=>form.elements.approveOrigin.checked=false);
   let previewRevision=0;
   function clearPreview(){previewRevision++;$("#cronPreview").textContent=""}

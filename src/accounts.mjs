@@ -20,7 +20,7 @@ export function card(record) {
   const correctedDay = legacySuccessDay(c,record.credential.fields);
   return {
     id: record.account.id, version: record.version, label: record.account.label || record.account.id,
-    siteType: c.siteType, baseUrl: c.baseUrl, route: c.route,
+    siteType: c.siteType, authMode: c.authMode, baseUrl: c.baseUrl, route: c.route,
     enabled: c.enabled, autoCheckIn: c.autoCheckIn, available: enabled(record),
     schedule: SCHEDULE_LABEL, queryBalance: c.queryBalance, balance: balanceData(record.credential.fields),
     userAgent: c.userAgent, userId: c.userId, username: c.username,

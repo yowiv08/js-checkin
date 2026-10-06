@@ -1,9 +1,10 @@
 import { wafHeaders } from "./waf.mjs";
 import { responseMessage } from "./diagnostics.mjs";
+import { passwordAuth } from "./common.mjs";
 
 /** @returns {import("../sdk/index").HttpRequest & { responseType: "text" }} */
 export function requestFor(config) {
-  const agent = config.siteType === "AgentRouter";
+  const agent = config.siteType === "AgentRouter" && passwordAuth(config);
   const path = agent ? "/api/user/login" : config.siteType === "AnyRouter" ? "/api/user/sign_in" : "/api/user/checkin";
   const origin = config.baseUrl.split("/").slice(0, 3).join("/");
   const headers = { accept: "application/json", origin, referer: config.baseUrl + (agent ? "/login" : "/") };
@@ -17,6 +18,9 @@ export function requestFor(config) {
     responseType: "text", timeoutMs: 30000, followRedirects: false, allowDirectFallback: false,
     ...(agent ? { body: { username: config.username, password: config.password } } : {})
   };
+}
+export function loginRequest(config) {
+  return requestFor({...config,siteType:"AgentRouter",authMode:"password"});
 }
 export function businessAccepted(response) {
   if (response.statusCode < 200 || response.statusCode >= 300) return false;

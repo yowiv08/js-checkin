@@ -20,13 +20,18 @@ Router2API 签到插件，支持账号管理、自动签到、余额查询、API
 
 | 类型 | 登录信息 | 签到方式 | 余额更新 |
 | --- | --- | --- | --- |
-| New API | 站点地址、Cookie、User ID | Cookie 签到 | 签到后更新或手动刷新 |
-| AnyRouter | Cookie、User ID | Cookie 签到 | 签到后更新或手动刷新 |
-| AgentRouter | 用户名或邮箱、密码 | 登录签到 | 签到后更新或手动刷新 |
+| New API | Cookie + User ID 或账号密码 | Cookie 签到或登录后签到 | 签到后更新或手动刷新 |
+| AnyRouter | Cookie + User ID 或账号密码 | Cookie 签到或登录后签到 | 签到后更新或手动刷新 |
+| AgentRouter | Cookie + User ID 或账号密码 | 密码登录触发签到；Cookie 使用独立签到接口 | 签到后更新或手动刷新 |
 
 AnyRouter 默认地址为 `https://anyrouter.top`，AgentRouter 默认地址为 `https://agentrouter.org`。
 
 Cookie 使用请求头 Cookie，User ID 使用请求头 New-Api-User。User-Agent 可选填。
+
+每个站点均可选择「Cookie / CK」或「账号密码」。密码模式通过 `/api/user/login` 获取 session 和 User ID，无需手填 Cookie。
+New API 登录后调用 `/api/user/checkin`，AnyRouter 调用 `/api/user/sign_in`；登录成功不等于签到成功。
+AgentRouter 的密码模式保留登录触发签到行为；Cookie 模式需要站点提供 `/api/user/checkin`，不支持时直接报错。
+当前密码模式兼容返回 `data.id` 与 session Cookie 的 New API 模板；要求验证码、二次验证、加密密码或仅返回 Bearer 令牌的版本不会继续签到。
 
 ## 定时设置
 
@@ -47,7 +52,7 @@ AnyRouter 签到接口返回 HTTP 2xx 和 `{"message":"","success":true}` 时显
 - New API 按站点设置显示 USD、CNY、自定义币种或 quota。
 - AnyRouter 官方站点按 `500000 quota / USD` 换算。
 - 所有站点均可手动刷新余额，不触发签到。
-- AgentRouter 复用登录签到时保存的会话；未保存会话或会话失效时需先登录并签到。会话不包含在导出配置中。
+- 所有密码模式账号复用登录签到时保存的会话；未保存会话或会话失效时需先登录并签到。会话不包含在导出配置中。
 - 刷新失败时保留上次余额并显示错误，尚未获取时显示 `—`。
 
 ## API 令牌
@@ -60,7 +65,7 @@ AnyRouter 签到接口返回 HTTP 2xx 和 `{"message":"","success":true}` 时显
 - 密钥默认隐藏，点击「复制」直接写入剪贴板；「更多」中可查看密钥、启停及删除。密钥不写入日志、任务记录或配置导出。
 - 分组、模型及显示汇率短期缓存 60 秒；手动刷新清除页面选项缓存。保存时重新检查令牌配置和额度换算信息。
 - 操作凭证由服务端签发，不依赖浏览器时间；正常编辑无须因十分钟限制反复关闭编辑器。
-- AgentRouter 使用已保存且路径适用的登录会话；旧会话缺少路径信息时，需在下次正常登录签到后使用令牌管理。
+- 密码模式使用已保存且路径适用的登录会话；旧会话缺少路径信息时，需在下次正常登录签到后使用令牌管理。
 - 写请求不会自动重发。出现「待核对」时先刷新列表核实，不要直接再次新建令牌。
 - 编辑前会重读站点配置，未修改额度时保留最新额度；上游不提供原子条件更新，提交期间仍可能存在并发消费。
 
@@ -70,6 +75,7 @@ AnyRouter 签到接口返回 HTTP 2xx 和 `{"message":"","success":true}` 时显
 {
   "label": "日常账号",
   "siteType": "NewAPI",
+  "authMode": "cookie",
   "baseUrl": "https://TARGET",
   "cookie": "session=TOKEN",
   "userId": "123",
@@ -83,7 +89,8 @@ AnyRouter 签到接口返回 HTTP 2xx 和 `{"message":"","success":true}` 时显
 }
 ```
 
-AgentRouter 使用 `username` 和 `password`，`cookie` 和 `userId` 留空。
+密码模式设置 `"authMode": "password"`，填写 `username` 和 `password`，`cookie` 和 `userId` 留空。
+旧配置无须修改：原 Cookie 账号和 AgentRouter 密码账号保留原认证方式。
 
 ## 安装
 

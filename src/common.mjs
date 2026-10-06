@@ -5,6 +5,7 @@ export class InputError extends Error {
 }
 export const TYPES = ["NewAPI", "AnyRouter", "AgentRouter"];
 export const DEFAULTS = { NewAPI: "", AnyRouter: "https://anyrouter.top", AgentRouter: "https://agentrouter.org" };
+export const passwordAuth = config => (config.authMode ?? (config.siteType === "AgentRouter" ? "password" : "cookie")) === "password";
 export const STATUS_LABELS = {
   Success: "签到成功", Already: "今日已签到", Skipped: "已跳过",
   AuthExpired: "认证失效", Challenge: "需要人机验证", RateLimited: "请求限流",
@@ -62,21 +63,23 @@ export function configFrom(ctx, body, previous = undefined) {
   const changedSite = previous && (siteType !== previous.siteType || target.origin !== ctx.url.parse(previous.baseUrl).origin);
   const route = body.route ?? previous?.route ?? "direct";
   if (!["direct", "pool"].includes(route)) throw new InputError(400, "网络路线仅支持 direct 或 pool");
+  const authMode = body.authMode ?? (body.cookie ? "cookie" : body.username ? "password" :
+    (previous?.siteType === siteType ? previous.authMode : undefined) ?? (siteType === "AgentRouter" ? "password" : "cookie"));
+  if (!["cookie","password"].includes(authMode)) throw new InputError(400,"认证方式仅支持 cookie 或 password");
   const config = {
-    siteType, baseUrl: target.url, route,
+    siteType, authMode, baseUrl: target.url, route,
     enabled: flag(body.enabled, "启用状态", previous?.enabled ?? true),
     autoCheckIn: flag(body.autoCheckIn, "自动签到", previous?.autoCheckIn ?? false),
     queryBalance: flag(body.queryBalance, "签到后更新余额", previous?.queryBalance ?? true),
     userAgent: text(body.userAgent ?? previous?.userAgent ?? "", "User-Agent", 512).trim(),
     cookie: "", userId: "", username: "", password: ""
   };
-  if (siteType === "AgentRouter") {
+  if (passwordAuth(config)) {
     config.username = text(body.username ?? previous?.username ?? "", "用户名或邮箱", 256, true).trim();
     const supplied = text(body.password ?? "", "密码", 4096);
     const changedUser = previous && config.username !== previous.username;
     config.password = supplied || (!changedSite && !changedUser ? previous?.password : "") || "";
     if (!config.password) throw new InputError(400, "请填写密码；更换站点或用户名后必须重新填写");
-    config.userAgent = "";
   } else {
     config.userId = text(body.userId ?? previous?.userId ?? "", "User ID", 40, true).trim();
     if (!/^[1-9]\d{0,39}$/.test(config.userId)) throw new InputError(400, "User ID 必须是正整数字符串");
@@ -90,9 +93,11 @@ export function configFrom(ctx, body, previous = undefined) {
 }
 /** @param {Context} ctx */
 export function identity(ctx, config) {
-  return ctx.crypto.sha256(JSON.stringify([
+  const values = [
     config.siteType, config.baseUrl, config.userId, config.username, config.cookie, config.password
-  ]));
+  ];
+  if (passwordAuth(config) !== (config.siteType === "AgentRouter")) values.push(config.authMode);
+  return ctx.crypto.sha256(JSON.stringify(values));
 }
 /** @param {Context} ctx */
 export function decode(ctx, credential) {

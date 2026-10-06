@@ -1,4 +1,4 @@
-import { InputError, input, id, text, object, enabled, identity, acquire, renew, release, accountLock, cancelled } from "./common.mjs";
+import { InputError, input, id, text, object, enabled, identity, acquire, renew, release, accountLock, cancelled, passwordAuth } from "./common.mjs";
 import { readAccount, readAgentSession, forgetAgentSession } from "./accounts.mjs";
 import { exactJson, requireAgentSession } from "./balance.mjs";
 import { prepareWaf, wafHeaders } from "./waf.mjs";
@@ -63,7 +63,7 @@ async function withAccount(ctx,accountId,handler) {
       if(!(await ctx.http.approvedOrigins()).includes(origin))throw new InputError(403,"站点 origin 未授权");
     };
     await touch();
-    const auth=config.siteType==="AgentRouter"?readAgentSession(ctx,record,basePath+"/api/token/"):config;
+    const auth=passwordAuth(config)?readAgentSession(ctx,record,basePath+"/api/token/"):config;
     let prepared;
     const open=async()=>{
       if(prepared)return;
@@ -81,7 +81,7 @@ async function withAccount(ctx,accountId,handler) {
     };
     const request=async(method,path,bodyText=undefined,authenticated=true)=>{
       await open();await touch();
-      if(authenticated&&config.siteType==="AgentRouter")requireAgentSession(auth,basePath+path.split("?")[0]);
+      if(authenticated&&passwordAuth(config))requireAgentSession(auth,basePath+path.split("?")[0]);
       const headers=wafHeaders(prepared,{
         accept:"application/json",origin,referer:config.baseUrl+"/",
         ...(authenticated?{cookie:auth.cookie,"new-api-user":auth.userId}:{})
@@ -93,7 +93,7 @@ async function withAccount(ctx,accountId,handler) {
       });
       try{return business(response);}
       catch(error){
-        if(error instanceof TokenError&&error.code==="AUTH_EXPIRED"&&config.siteType==="AgentRouter")
+        if(error instanceof TokenError&&error.code==="AUTH_EXPIRED"&&passwordAuth(config))
           await forgetAgentSession(ctx,record);
         throw error;
       }

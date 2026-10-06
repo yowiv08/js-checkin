@@ -1,4 +1,4 @@
-import { InputError, cancelled, errorMessage } from "./common.mjs";
+import { InputError, cancelled, errorMessage, passwordAuth } from "./common.mjs";
 import { interpret, requestFor } from "./adapters.mjs";
 import { wafHeaders } from "./waf.mjs";
 import { responseMessage } from "./diagnostics.mjs";
@@ -73,14 +73,14 @@ export function requireAgentSession(session, requestPath = null) {
   if (!session || !sessionCookie(session.cookie) || typeof session.userId !== "string" ||
     !/^[1-9]\d{0,39}$/.test(session.userId) ||
     !(session.expiresAt === null || Number.isSafeInteger(session.expiresAt)))
-    throw new InputError(401,"AgentRouter 缺少有效登录会话，请先登录并签到");
+    throw new InputError(401,"缺少有效登录会话，请先登录并签到");
   if (session.expiresAt !== null && session.expiresAt <= Date.now())
-    throw new InputError(401,"AgentRouter 登录会话已过期，请先登录并签到");
+    throw new InputError(401,"登录会话已过期，请先登录并签到");
   if (requestPath !== null) {
     const scope = session.cookiePath;
     if (typeof scope !== "string" || !scope.startsWith("/") ||
       !(requestPath === scope || requestPath.startsWith(scope.endsWith("/") ? scope : scope + "/")))
-      throw new InputError(401,"AgentRouter 会话缺少此接口的路径作用域，请在下次正常登录签到后重试");
+      throw new InputError(401,"会话缺少此接口的路径作用域，请在下次正常登录签到后重试");
   }
   return session;
 }
@@ -97,10 +97,10 @@ function getSpec(config, path, session) {
 export async function readBalance(ctx, config, client, agent = null) {
   const checkedAt = new Date().toISOString();
   try {
-    const session = config.siteType === "AgentRouter" ? requireAgentSession(agent) : config;
+    const session = passwordAuth(config) ? requireAgentSession(agent) : config;
     const response = await client.request(getSpec(config,"/api/user/self",session));
-    if (config.siteType === "AgentRouter" && interpret("NewAPI",response).status === "AuthExpired")
-      throw new InputError(401,"AgentRouter 登录会话已失效，请先登录并签到" +
+    if (passwordAuth(config) && interpret("NewAPI",response).status === "AuthExpired")
+      throw new InputError(401,"登录会话已失效，请先登录并签到" +
         (responseMessage(response) ? "\n" + responseMessage(response) : ""));
     const data = business(response);
     if (!integer(data.quota)) throw new InputError(502,responseMessage(response));
@@ -129,6 +129,6 @@ export async function readBalance(ctx, config, client, agent = null) {
   } catch (error) {
     if (cancelled(error)) throw error;
     return { checkedAt, error: errorMessage(error),
-      ...(config.siteType === "AgentRouter" && error instanceof InputError && error.status === 401 ? {authExpired:true} : {}) };
+      ...(passwordAuth(config) && error instanceof InputError && error.status === 401 ? {authExpired:true} : {}) };
   }
 }

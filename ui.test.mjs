@@ -55,6 +55,32 @@ async function page(t, rows=[],handler){
   const $=s=>dom.window.document.querySelector(s);
   return{dom,$,calls,blobs,click:s=>$(s).click(),event:(target,name)=>target.dispatchEvent(new dom.window.Event(name,{bubbles:true,cancelable:true}))};
 }
+for(const siteType of ["NewAPI","AnyRouter","AgentRouter"])test(`${siteType} UI 可选 CK 或账号密码，保存与 JSON 一致`,async t=>{
+  const p=await page(t,[account({siteType})]);
+  p.click('[data-action="edit"]');
+  p.$('[name="authMode"]').value="password";p.event(p.$('[name="authMode"]'),"change");
+  assert.equal(p.$(".cookie-field").hidden,true);assert.equal(p.$(".agent-field").hidden,false);
+  assert.equal(p.$('[name="cookie"]').value,"");assert.equal(p.$('[name="userId"]').value,"");
+  p.$('[name="username"]').value="test-user";p.$('[name="password"]').value="TEST_PASSWORD";
+  p.click("#jsonTab");
+  const config=JSON.parse(p.$("#jsonText").value);assert.equal(config.authMode,"password");assert.equal(config.username,"test-user");
+  p.click("#visualTab");p.event(p.$("#accountForm"),"submit");
+  await until(()=>p.calls.some(c=>c.route==="accounts/save"));
+  const body=p.calls.find(c=>c.route==="accounts/save").body;
+  assert.equal(body.authMode,"password");assert.equal(body.cookie,"");assert.equal(body.password,"TEST_PASSWORD");
+});
+test("认证模式切换清空旧凭据；旧密码 JSON 不要求 Cookie/UID",async t=>{
+  const p=await page(t);p.click("#add");
+  p.$('[name="authMode"]').value="password";p.event(p.$('[name="authMode"]'),"change");
+  p.$('[name="username"]').value="old";p.$('[name="password"]').value="old-password";
+  p.$('[name="authMode"]').value="cookie";p.event(p.$('[name="authMode"]'),"change");
+  assert.equal(p.$('[name="username"]').value,"");assert.equal(p.$('[name="password"]').value,"");
+  assert.equal(p.$(".cookie-field").hidden,false);
+  p.click("#jsonTab");p.$("#jsonText").value=JSON.stringify({label:"legacy",siteType:"NewAPI",baseUrl:"https://new.example",username:"user",password:"PASS"});
+  p.click("#visualTab");assert.equal(p.$('[name="authMode"]').value,"password");assert.equal(p.$(".agent-field").hidden,false);
+  p.event(p.$("#accountForm"),"submit");await until(()=>p.calls.some(c=>c.route==="accounts/save"));
+  assert.equal(p.calls.find(c=>c.route==="accounts/save").body.authMode,"password");
+});
 test("令牌独立页面与快捷入口；密钥按需显示复制，切账号和离页清空",async t=>{
   const p=await page(t,[account(),account({id:"b",siteType:"AnyRouter"}),account({id:"c",siteType:"AgentRouter"})],tokenMock());
   const copied=[];

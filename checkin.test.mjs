@@ -1,10 +1,115 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as plugin from "./src/plugin.mjs";
-import { runOne, runBatch } from "./src/runner.mjs";
+import { runOne, runBatch, refreshBalance } from "./src/runner.mjs";
 import { interpret } from "./src/adapters.mjs";
 import { acquire, release, day, accountLock, configFrom } from "./src/common.mjs";
 import { fixture, response, cancellation } from "./test-host.mjs";
+import { readAccount, readAgentSession } from "./src/accounts.mjs";
+
+for(const siteType of ["NewAPI","AnyRouter","AgentRouter"])test(`${siteType} 认证方式独立，支持 CK 与密码且不保留另一模式凭据`,()=>{
+  const f=fixture();
+  const base={siteType,baseUrl:"https://site.example",authMode:"password",username:"user",password:"PASS",cookie:"session=OLD",userId:"123"};
+  const password=configFrom(f.ctx(),base);assert.equal(password.authMode,"password");assert.equal(password.cookie,"");assert.equal(password.userId,"");
+  const cookie=configFrom(f.ctx(),{...base,authMode:"cookie"});
+  assert.equal(cookie.username,"");assert.equal(cookie.password,"");assert.equal(cookie.cookie,"session=OLD");
+  assert.throws(()=>configFrom(f.ctx(),{...base,authMode:"invalid"}),/认证方式/);
+  assert.throws(()=>configFrom(f.ctx(),{...base,password:""}),/密码/);
+  assert.throws(()=>configFrom(f.ctx(),{...base,authMode:"cookie",cookie:""}),/Cookie/);
+});
+
+for(const siteType of ["NewAPI","AnyRouter"])test(`${siteType} 密码先登录再签到，精确 UID/会话用于余额及令牌，不把登录当签到`,async()=>{
+  const f=fixture(),a=f.seed(siteType,{authMode:"password",username:"login-user",password:"PASSWORD_ONLY",cookie:"",userId:"",queryBalance:true});
+  const uid="90071992547409931234";
+  f.handler=async spec=>{
+    if(spec.url.endsWith("/api/user/login")){
+      assert.deepEqual(spec.body,{username:"login-user",password:"PASSWORD_ONLY"});
+      assert.equal(spec.headers.cookie,undefined);assert.equal(spec.headers["new-api-user"],undefined);
+      const r=response({success:true,data:{id:uid}});r.headers={"set-cookie":["session=LOGIN_SESSION; Path=/; Secure; HttpOnly"]};return r;
+    }
+    if(spec.url.endsWith("/api/status")){assert.equal(spec.headers["new-api-user"],undefined);return response({success:true,data:{quota_display_type:"USD",quota_per_unit:500000}});}
+    assert.equal(spec.headers.cookie,"session=LOGIN_SESSION");assert.equal(spec.headers["new-api-user"],uid);
+    if(spec.method==="POST")return response({success:true,message:"签到成功"});
+    if(spec.url.includes("/api/token/"))return response({success:true,data:[]});
+    return response({success:true,data:{quota:500000}});
+  };
+  const result=await runOne(f.ctx(),a.id);assert.equal(result.status,"Success",JSON.stringify(result));
+  const posts=f.calls.filter(c=>c.method==="POST");assert.equal(posts.length,2);
+  assert.ok(posts[0].url.endsWith("/api/user/login"));assert.ok(posts[1].url.endsWith(siteType==="NewAPI"?"/api/user/checkin":"/api/user/sign_in"));
+  assert.equal(posts[0].client,posts[1].client);assert.equal(posts[1].body,undefined);
+  assert.equal(a.credential.fields.lastSuccessDay,day());
+  assert.equal(readAgentSession(f.ctx(),await readAccount(f.ctx(),a.id)).userId,uid);
+  assert.equal(JSON.parse(a.credential.fields.balance).snapshot.amount,"1");
+  await refreshBalance(f.ctx(),a.id);
+  const tokens=await plugin.listTokens(f.ctx(undefined,{query:{accountId:a.id}}));
+  assert.equal(tokens.statusCode,200);assert.equal(f.calls.filter(c=>c.method==="POST").length,2);
+  const card=(await plugin.listAccounts(f.ctx())).body.accounts[0];
+  assert.equal(card.authMode,"password");assert.equal(card.cookie,"");assert.equal(card.balanceSession,undefined);
+});
+
+for(const [label,body,code,status,cookies] of [
+  ["密码错误",{success:false,message:"用户名或密码错误"},200,"AuthExpired",true],
+  ["验证码",{success:false,message:"Turnstile 验证失败"},200,"Challenge",true],
+  ["二次验证",{success:true,data:{require_2fa:true,id:"123"}},200,"Challenge",true],
+  ["登录缺 session",{success:true,data:{id:"123"}},200,"Failed",false],
+  ["登录缺 UID",{success:true,data:{}},200,"Failed",true],
+  ["限流",{success:false},429,"RateLimited",true],
+  ["服务异常",{success:false},503,"Uncertain",true],
+  ["不支持登录",{success:false},404,"Failed",true]
+])test(`密码登录${label}时不发送签到、不记录今日成功、不泄露登录正文`,async()=>{
+  const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"user",password:"PASS"});
+  f.handler=async()=>{const r=response({...body,secret:"LOGIN_SECRET"},code);if(cookies)r.headers={"set-cookie":["session=S; Path=/"]};return r;};
+  const result=await runOne(f.ctx(),a.id);assert.equal(result.status,status,JSON.stringify(result));
+  assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.endsWith("/api/user/login"));
+  assert.equal(a.credential.fields.lastSuccessDay,undefined);
+  assert.doesNotMatch(JSON.stringify(result),/LOGIN_SECRET/);
+});
+test("密码登录后签到超时不重复登录/签到，余额查询只复用已存会话",async()=>{
+  const f=fixture(),a=f.seed("AnyRouter",{authMode:"password",username:"u",password:"p"});
+  f.handler=async spec=>{
+    if(spec.url.endsWith("/api/user/login")){const r=response({success:true,data:{id:"123"}});r.headers={"set-cookie":["session=S; Path=/"]};return r;}
+    throw Error("timeout");
+  };
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Uncertain");
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");assert.equal(f.calls.length,2);
+});
+test("Cookie 模式 AgentRouter 不提交账号密码，独立签到接口不支持时明确失败",async()=>{
+  const f=fixture(),a=f.seed("AgentRouter",{authMode:"cookie",cookie:"session=CK",userId:"123"});
+  f.handler=async spec=>{assert.ok(spec.url.endsWith("/api/user/checkin"));assert.equal(spec.body,undefined);assert.equal(spec.headers.cookie,"session=CK");return response({success:false},404);};
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Failed");assert.equal(f.calls.length,1);
+});
+test("密码登录取消、超时不重放，异常信息不泄露密码或 Cookie",async()=>{
+  for(const cancel of [true,false]){
+    const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"u",password:"p"});
+    f.handler=async()=>{throw cancel?cancellation():Error("PASSWORD_SECRET session=LOGIN_SECRET");};
+    if(cancel)await assert.rejects(runOne(f.ctx(),a.id),error=>error.code==="host.cancelled");
+    else{const result=await runOne(f.ctx(),a.id);assert.equal(result.status,"Uncertain");assert.doesNotMatch(JSON.stringify(result),/PASSWORD_SECRET|LOGIN_SECRET/);}
+    assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");assert.equal(f.calls.length,1);
+  }
+});
+test("密码会话路径不适用于签到时停止；未建立会话的余额和令牌不隐式登录",async()=>{
+  const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"u",password:"p"});
+  assert.equal((await refreshBalance(f.ctx(),a.id)).results[0].status,"Failed");
+  assert.equal((await plugin.listTokens(f.ctx(undefined,{query:{accountId:a.id}}))).statusCode,401);
+  assert.equal(f.requests.length,0);
+  f.handler=async()=>{const r=response({success:true,data:{id:"123"}});r.headers={"set-cookie":["session=S; Path=/api/user/self"]};return r;};
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Failed");assert.equal(f.calls.length,1);
+});
+test("New API 密码会话失效后清缓存，修改认证方式不复用旧会话",async()=>{
+  const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"u",password:"p"});
+  f.handler=async spec=>{
+    if(spec.url.endsWith("/api/user/login")){const r=response({success:true,data:{id:"123"}});r.headers={"set-cookie":["session=S; Path=/"]};return r;}
+    return response({success:true,message:"签到成功"});
+  };
+  assert.equal((await runOne(f.ctx(),a.id)).status,"Success");assert.ok(a.credential.fields.balanceSession);
+  f.handler=async()=>response({success:false,message:"未登录"},401);
+  assert.equal((await plugin.listTokens(f.ctx(undefined,{query:{accountId:a.id}}))).statusCode,401);
+  assert.equal(a.credential.fields.balanceSession,undefined);
+  const saved=await plugin.saveAccount(f.ctx({id:a.id,version:String(a.version),authMode:"cookie",cookie:"session=CK",userId:"456"}));
+  assert.equal(saved.statusCode,200);assert.equal(saved.body.account.password,"");
+  assert.equal(saved.body.account.authMode,"cookie");
+  assert.equal(a.credential.fields.lastSuccessDay,undefined);
+});
 
 test("只提供签到、清单入口不触发登录或模型调用", async () => {
   const f=fixture(),a=f.seed("AgentRouter"),ctx=f.ctx();
