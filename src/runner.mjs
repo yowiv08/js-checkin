@@ -27,28 +27,6 @@ export async function writeLog(ctx, result, taskName) {
 }
 
 /** @param {import("./common.mjs").Context} ctx */
-async function waitForAgent(ctx, config, accountLease) {
-  const hash = ctx.crypto.sha256(ctx.url.parse(config.baseUrl).origin);
-  const lock = await acquire(ctx, `agent:${hash}`);
-  if (!lock) return null;
-  try {
-    const nextKey = `agent-next:${hash}`;
-    const next = await ctx.state.shared.get(nextKey);
-    if (next !== null && (typeof next !== "number" || !Number.isSafeInteger(next) || next > Date.now() + 120000))
-      throw new InputError(503, "站点节流记录异常，请稍后重试");
-    while (typeof next === "number" && next > Date.now()) {
-      await ctx.delay(Math.min(5000, next - Date.now()));
-      await renew(ctx, accountLease);
-      await renew(ctx, lock);
-    }
-    return { ...lock, nextKey };
-  } catch (error) {
-    await release(ctx, lock);
-    throw error;
-  }
-}
-
-/** @param {import("./common.mjs").Context} ctx */
 export async function runOne(ctx, accountId, { automatic = false, acknowledgeUncertain = false, slot = null, stamps = null } = {}) {
   const startedAt = new Date().toISOString();
   let record, lease, gate, client, dispatched = false, pending = false;
@@ -79,7 +57,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     if (!(await ctx.http.approvedOrigins()).includes(origin))
       throw new InputError(403, "站点 origin 未授权，未发送签到请求");
     if (passwordAuth(record.config)) {
-      gate = await waitForAgent(ctx, record.config, lease);
+      gate = await acquire(ctx, "agent:" + ctx.crypto.sha256(origin));
       if (!gate) return finish("Skipped", "同站点已有登录任务，未并发发送");
     }
     client = await ctx.http.createClient({route:record.config.route,allowDirectFallback:false});
@@ -99,7 +77,6 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     outcome = finish("Uncertain", "请求已准备发送，尚未确认结果；中断后请先到站点核实");
     await persist(ctx, record, outcome);
     pending = true;
-    if (gate) await ctx.state.shared.set(gate.nextKey, Date.now() + 90000, { ttlSeconds: 240 });
     await renew(ctx, lease);
     if (gate) await renew(ctx, gate);
     dispatched = true;
@@ -202,10 +179,6 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     return outcome;
   } finally {
     if (client) { try { await client.close(); } catch {  } }
-    if (gate && dispatched) {
-      try { await ctx.state.shared.set(gate.nextKey, Date.now() + 60000, { ttlSeconds: 240 }); }
-      catch {  }
-    }
     await release(ctx, gate);
     await release(ctx, lease);
   }

@@ -290,13 +290,75 @@ test("锁释放仅允许原持有者，不能删除新锁",async()=>{
   f.state.set(key,{value:"new-owner",expires:Date.now()+180000});
   await release(ctx,old);assert.equal(f.state.get(key).value,"new-owner");
 });
-test("AgentRouter 同 origin 登录间隔至少 60 秒；共享节流使用可取消等待",async t=>{
-  let clock=Date.now();t.mock.method(Date,"now",()=>clock);
+for(const siteType of ["NewAPI","AnyRouter","AgentRouter"])
+  for(const route of ["direct","pool"])test(`${siteType} ${route} 同站点四个密码账号连续签到，无固定分钟等待`,async t=>{
+    let clock=Date.now();const start=clock;t.mock.method(Date,"now",()=>clock);
+    const f=fixture(),rows=Array.from({length:4},(_,i)=>f.seed(siteType,{
+      authMode:"password",route,username:"user-"+i,password:"TEST_ONLY",cookie:"",userId:"",queryBalance:false
+    }));
+    f.onDelay=ms=>{clock+=ms};
+    const sent=[];f.handler=async spec=>{
+      if(spec.url.endsWith("/api/user/login")){
+        sent.push(clock);
+        const r=response({success:true,data:{id:"123",checked_in:false}});
+        r.headers={"set-cookie":["session=TEST_ONLY; Path=/"]};return r;
+      }
+      return response({success:true,message:"签到成功"});
+    };
+    const out=await runBatch(f.ctx(),rows.map(a=>a.id));
+    assert.deepEqual(out.results.map(r=>r.status),Array(4).fill("Success"));
+    assert.deepEqual(sent,Array(4).fill(start));assert.equal(clock-start,0);
+    assert.equal(f.waits.filter(ms=>ms>0).length,0);
+    assert.equal(f.calls.filter(c=>c.method==="POST").length,siteType==="AgentRouter"?4:8);
+    assert.equal([...f.state.keys()].some(key=>key.startsWith("agent-next:")||key.startsWith("agent:")),false);
+    assert.ok(f.clients.every(c=>c.closed&&c.options.route===route));
+  });
+for(const legacy of ["future","malformed"])test(`旧版 ${legacy} 登录节流缓存不再读取或更新`,async t=>{
+  const now=Date.now();t.mock.method(Date,"now",()=>now);
+  const f=fixture(),a=f.seed("AgentRouter"),ctx=f.ctx();
+  const key="agent-next:"+ctx.crypto.sha256(new URL(JSON.parse(a.credential.fields.config).baseUrl).origin);
+  const value=legacy==="future"?now+90000:{invalid:true};
+  await ctx.state.shared.set(key,value,{ttlSeconds:240});
+  for(const method of ["get","set"]){
+    const original=ctx.state.shared[method];
+    ctx.state.shared[method]=async(k,...args)=>{
+      assert.notEqual(k,key,"签到不得访问旧节流缓存");return original(k,...args);
+    };
+  }
+  f.onDelay=ms=>assert.equal(ms,0,"不得等待旧版冷却时间");
+  f.handler=async()=>response({success:true,data:{checked_in:false}});
+  assert.equal((await runOne(ctx,a.id)).status,"Success");
+  assert.deepEqual(f.state.get(key).value,value);assert.equal(f.calls.length,1);
+});
+test("同站点登录互斥，释放后下一账号立即执行",async()=>{
   const f=fixture(),a=f.seed("AgentRouter"),b=f.seed("AgentRouter",{username:"other"});
-  f.onDelay=ms=>{clock+=ms};
-  const sent=[];f.handler=async()=>{sent.push(clock);return response({success:true,data:{checked_in:false}})};
-  const out=await runBatch(f.ctx(),[a.id,b.id]);
-  assert.equal(out.results.length,2);assert.ok(sent[1]-sent[0]>=60000);assert.ok(f.waits.includes(5000));
+  let ready,complete;const started=new Promise(r=>ready=r);
+  f.handler=async()=>{
+    ready();await new Promise(r=>complete=r);
+    return response({success:true,data:{checked_in:false}});
+  };
+  const first=runOne(f.ctx(),a.id);await started;
+  assert.equal((await runOne(f.ctx(),b.id)).status,"Skipped");assert.equal(f.calls.length,1);
+  complete();assert.equal((await first).status,"Success");
+  f.handler=async()=>response({success:true,data:{checked_in:false}});
+  assert.equal((await runOne(f.ctx(),b.id)).status,"Success");
+  assert.equal(f.calls.length,2);assert.equal(f.waits.filter(ms=>ms>0).length,0);
+});
+test("AgentRouter 限流不循环重试、超时保留待核对",async()=>{
+  for(const timeout of [false,true]){
+    const f=fixture(),a=f.seed("AgentRouter");
+    f.handler=async()=>{
+      if(timeout)throw Error("timeout");
+      return response({success:false,message:"请求限流"},429);
+    };
+    assert.equal((await runOne(f.ctx(),a.id)).status,timeout?"Uncertain":"RateLimited");
+    assert.equal(f.calls.length,1);assert.equal(f.waits.filter(ms=>ms>0).length,0);
+    if(timeout){
+      assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");
+      assert.equal(f.calls.length,1);
+    }
+    assert.equal([...f.state.keys()].some(key=>key.startsWith("agent-next:")),false);
+  }
 });
 test("job 输入只含 ID 和确认选项，同批重复点击复用活跃任务",async()=>{
   const f=fixture(),a=f.seed(),ctx=f.ctx({ids:[a.id]});
