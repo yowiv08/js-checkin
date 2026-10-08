@@ -47,7 +47,7 @@ for(const siteType of ["NewAPI","AnyRouter"])test(`${siteType} 密码先登录�
   assert.equal(card.authMode,"password");assert.equal(card.cookie,"");assert.equal(card.balanceSession,undefined);
 });
 
-for(const [label,body,code,status,cookies] of [
+for(const siteType of ["NewAPI","AnyRouter"])for(const [label,body,code,status,cookies] of [
   ["密码错误",{success:false,message:"用户名或密码错误"},200,"AuthExpired",true],
   ["验证码",{success:false,message:"Turnstile 验证失败"},200,"Challenge",true],
   ["二次验证",{success:true,data:{require_2fa:true,id:"123"}},200,"Challenge",true],
@@ -56,13 +56,20 @@ for(const [label,body,code,status,cookies] of [
   ["限流",{success:false},429,"RateLimited",true],
   ["服务异常",{success:false},503,"Uncertain",true],
   ["不支持登录",{success:false},404,"Failed",true]
-])test(`密码登录${label}时不发送签到、不记录今日成功、不泄露登录正文`,async()=>{
-  const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"user",password:"PASS"});
-  f.handler=async()=>{const r=response({...body,secret:"LOGIN_SECRET"},code);if(cookies)r.headers={"set-cookie":["session=S; Path=/"]};return r;};
-  const result=await runOne(f.ctx(),a.id);assert.equal(result.status,status,JSON.stringify(result));
+])test(`${siteType} 密码登录${label}时展示上游正文，不发送签到、不记录今日成功`,async()=>{
+  const f=fixture(),a=f.seed(siteType,{authMode:"password",username:"user",password:"PASSWORD_SECRET"});
+  const reply=response({...body,secret:"LOGIN_SECRET"},code);
+  if(cookies)reply.headers={"set-cookie":["session=HEADER_SECRET; Path=/"]};
+  f.handler=async()=>reply;
+  const {results:[result]}=await runBatch(f.ctx(),[a.id]);assert.equal(result.status,status,JSON.stringify(result));
+  assert.equal(result.message,reply.bodyText);assert.equal(result.httpStatus,code);
   assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.endsWith("/api/user/login"));
   assert.equal(a.credential.fields.lastSuccessDay,undefined);
-  assert.doesNotMatch(JSON.stringify(result),/LOGIN_SECRET/);
+  assert.equal(a.credential.fields.balanceSession,undefined);
+  const saved=JSON.parse(a.credential.fields.lastResult);
+  assert.equal(saved.message,reply.bodyText);assert.equal(saved.httpStatus,code);
+  assert.doesNotMatch(JSON.stringify(result),/PASSWORD_SECRET|HEADER_SECRET/);
+  assert.equal(f.logs.length,1);assert.doesNotMatch(JSON.stringify(f.logs),/LOGIN_SECRET|PASSWORD_SECRET|HEADER_SECRET/);
 });
 test("密码登录后签到超时不重复登录/签到，余额查询只复用已存会话",async()=>{
   const f=fixture(),a=f.seed("AnyRouter",{authMode:"password",username:"u",password:"p"});
@@ -78,13 +85,21 @@ test("Cookie 模式 AgentRouter 不提交账号密码，独立签到接口不支
   f.handler=async spec=>{assert.ok(spec.url.endsWith("/api/user/checkin"));assert.equal(spec.body,undefined);assert.equal(spec.headers.cookie,"session=CK");return response({success:false},404);};
   assert.equal((await runOne(f.ctx(),a.id)).status,"Failed");assert.equal(f.calls.length,1);
 });
-test("密码登录取消、超时不重放，异常信息不泄露密码或 Cookie",async()=>{
+for(const siteType of ["NewAPI","AnyRouter"])test(`${siteType} 密码登录取消、超时不重放，显示真实网络错误`,async()=>{
   for(const cancel of [true,false]){
-    const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"u",password:"p"});
-    f.handler=async()=>{throw cancel?cancellation():Error("PASSWORD_SECRET session=LOGIN_SECRET");};
-    if(cancel)await assert.rejects(runOne(f.ctx(),a.id),error=>error.code==="host.cancelled");
-    else{const result=await runOne(f.ctx(),a.id);assert.equal(result.status,"Uncertain");assert.doesNotMatch(JSON.stringify(result),/PASSWORD_SECRET|LOGIN_SECRET/);}
+    const f=fixture(),a=f.seed(siteType,{authMode:"password",username:"u",password:"p"});
+    f.handler=async()=>{throw cancel?cancellation():Object.assign(Error("connect timed out (upstream)"),{code:"ETIMEDOUT"});};
+    if(cancel){
+      await assert.rejects(runBatch(f.ctx(),[a.id]),error=>error.code==="host.cancelled");
+      assert.equal(f.logs.length,0);
+    }else{
+      const {results:[result]}=await runBatch(f.ctx(),[a.id]);assert.equal(result.status,"Uncertain");
+      assert.equal(result.message,"ETIMEDOUT: connect timed out (upstream)");assert.equal(result.httpStatus,null);
+      assert.equal(JSON.parse(a.credential.fields.lastResult).message,result.message);
+      assert.equal(f.logs.length,1);assert.doesNotMatch(JSON.stringify(f.logs),/ETIMEDOUT|connect timed out/);
+    }
     assert.equal((await runOne(f.ctx(),a.id)).status,"Skipped");assert.equal(f.calls.length,1);
+    assert.equal(a.credential.fields.lastSuccessDay,undefined);assert.equal(a.credential.fields.balanceSession,undefined);
   }
 });
 test("密码会话路径不适用于签到时停止；未建立会话的余额和令牌不隐式登录",async()=>{
@@ -92,8 +107,10 @@ test("密码会话路径不适用于签到时停止；未建立会话的余额�
   assert.equal((await refreshBalance(f.ctx(),a.id)).results[0].status,"Failed");
   assert.equal((await plugin.listTokens(f.ctx(undefined,{query:{accountId:a.id}}))).statusCode,401);
   assert.equal(f.requests.length,0);
-  f.handler=async()=>{const r=response({success:true,data:{id:"123"}});r.headers={"set-cookie":["session=S; Path=/api/user/self"]};return r;};
-  assert.equal((await runOne(f.ctx(),a.id)).status,"Failed");assert.equal(f.calls.length,1);
+  const reply=response({success:true,data:{id:"123"}});reply.headers={"set-cookie":["session=S; Path=/api/user/self"]};
+  f.handler=async()=>reply;
+  const result=await runOne(f.ctx(),a.id);assert.equal(result.status,"Failed");assert.equal(f.calls.length,1);
+  assert.equal(result.message,reply.bodyText);assert.equal(result.httpStatus,200);
 });
 test("New API 密码会话失效后清缓存，修改认证方式不复用旧会话",async()=>{
   const f=fixture(),a=f.seed("NewAPI",{authMode:"password",username:"u",password:"p"});

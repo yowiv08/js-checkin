@@ -89,6 +89,7 @@ try{
   await send("Page.navigate",{url:pathToFileURL(path.join(out,"index.html")).href});
   for(let i=0;i<100;i++){if(await evaluate("document.querySelectorAll('article.account').length===6"))break;await wait(50)}
   assert.equal(await evaluate("document.querySelectorAll('article.account').length"),6);
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('article.account'),card=>card.dataset.account)"),["demo-1","demo-2","demo-4","demo-6","demo-3","demo-5"]);
   const screenshot=async name=>{
     const data=await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
     await fs.writeFile(path.join(out,name+".png"),Buffer.from(data.data,"base64"));

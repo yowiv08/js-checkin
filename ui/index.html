@@ -63,7 +63,7 @@
 </head>
 <body>
 <main class="app">
-  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.3.1</span></header>
+  <header class="topline"><div class="brand"><span class="brandmark">✓</span> Check-in Studio <span class="tag">签到工作台</span></div><span class="tag">v0.3.2</span></header>
   <section class="hero"><div><div class="eyebrow">ROUTER2API</div><h1>中转站签到</h1><p>账号管理、自动签到、余额查询、API 令牌</p></div><div class="schedule"><small><span class="live"></span>统一签到时间</small><div class="clock">10:10</div><small>UTC+8</small></div></section>
   <nav class="tabs workspace-nav" aria-label="工作台模块"><button id="accountsTab" class="active" aria-pressed="true">签到账号</button><button id="tokensTab" aria-pressed="false">API 令牌</button></nav>
   <section id="accountsPage">
@@ -178,11 +178,14 @@
   function activeButtons(){ $("#runAll").disabled=starting||!!running()||!accounts.some(a=>a.available); document.querySelectorAll("button.run,button.balance-refresh").forEach(b=>b.disabled=starting||!!running()||b.dataset.available!=="true"); }
   function action(label,actionName,account,cls=""){const button=node("button",cls,label);button.type="button";button.dataset.action=actionName;button.dataset.id=account.id;return button}
   function toggle(label,key,account){const wrap=node("label","toggle"),box=node("input");box.type="checkbox";box.checked=!!account[key];box.dataset.toggle=key;box.dataset.id=account.id;wrap.append(box,document.createTextNode(label));return wrap}
+  const needsAttention=account=>account.invalid||["AuthExpired","Challenge","RateLimited","Failed","Uncertain"].includes(account.lastResult?.status);
+  const accountRank=account=>needsAttention(account)?2:["Success","Already"].includes(account.lastResult?.status)?0:1;
   function render(){
     $("#statTotal").textContent=accounts.length;$("#statSuccess").textContent=accounts.filter(a=>a.lastSuccessDay===today()).length;
-    $("#statAttention").textContent=accounts.filter(a=>a.invalid||["AuthExpired","Challenge","RateLimited","Failed","Uncertain"].includes(a.lastResult?.status)).length;
+    $("#statAttention").textContent=accounts.filter(needsAttention).length;
     $("#statAuto").textContent=accounts.filter(a=>a.available&&a.autoCheckIn).length;
     const query=$("#search").value.trim().toLowerCase(), shown=accounts.filter(a=>(filter==="all"||a.siteType===filter)&&[a.label,a.baseUrl].some(v=>(v||"").toLowerCase().includes(query)));
+    shown.sort((a,b)=>accountRank(a)-accountRank(b));
     const cards=$("#cards");cards.replaceChildren();
     if(!shown.length){const empty=node("div","empty");empty.append(node("strong","",accounts.length?"没有匹配的账号":"暂无账号"));if(!accounts.length){const b=node("button","primary","＋ 添加账号");b.onclick=()=>openEditor();empty.append(b)}cards.append(empty)}
     for(const a of shown){

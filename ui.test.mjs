@@ -259,6 +259,72 @@ test("漂亮空态、统计与账号筛选使用真实 DOM，外部文字不注�
   p.click('[data-type="AgentRouter"]');assert.equal(p.$("#cards").children.length,1);assert.match(p.$("#cards").textContent,/登录并签到/);
   p.$("#search").value="没有这个备注";p.event(p.$("#search"),"input");assert.match(p.$("#cards").textContent,/没有匹配/);
 });
+test("账号卡片成功置前、未签到居中、失败及认证异常置后，同类保持原顺序",async t=>{
+  const rows=Object.freeze([
+    account({id:"expired",lastResult:{status:"AuthExpired"},available:false}),
+    account({id:"pending"}),
+    account({id:"already",lastResult:{status:"Already"}}),
+    account({id:"failed",lastResult:{status:"Failed"},lastSuccessDay:new Date(Date.now()+8*3600000).toISOString().slice(0,10)}),
+    account({id:"success",lastResult:{status:"Success"}}),
+    account({id:"skipped",lastResult:{status:"Skipped"}}),
+    account({id:"challenge",lastResult:{status:"Challenge"}}),
+    account({id:"limited",lastResult:{status:"RateLimited"}}),
+    account({id:"uncertain",lastResult:{status:"Uncertain"}}),
+    account({id:"invalid",invalid:true,lastResult:{status:"Success"},available:false})
+  ]);
+  const original=rows.map(a=>a.id),p=await page(t,rows);
+  const order=()=>Array.from(p.$("#cards").children,card=>card.dataset.account);
+  const expected=["already","success","pending","skipped","expired","failed","challenge","limited","uncertain","invalid"];
+  assert.deepEqual(order(),expected);assert.equal(p.$("#statTotal").textContent,"10");assert.equal(p.$("#statAttention").textContent,"6");
+  p.event(p.$("#search"),"input");assert.deepEqual(order(),expected);
+  assert.deepEqual(rows.map(a=>a.id),original);assert.equal(p.calls.length,1);assert.equal(p.calls[0].route,"accounts");
+  p.click('[data-account="success"] [data-action="edit"]');p.event(p.$("#accountForm"),"submit");
+  await until(()=>p.calls.some(c=>c.route==="accounts/save"));
+  assert.equal(p.calls.find(c=>c.route==="accounts/save").body.id,"success");
+});
+test("站点筛选和搜索后仍按签到结果排序，不额外请求站点",async t=>{
+  const p=await page(t,[
+    account({id:"failed",label:"主力失败",siteType:"AnyRouter",lastResult:{status:"AuthExpired"}}),
+    account({id:"other",label:"主力成功",siteType:"AgentRouter",lastResult:{status:"Success"}}),
+    account({id:"pending",label:"主力待签",siteType:"AnyRouter"}),
+    account({id:"already",label:"主力已签",siteType:"AnyRouter",lastResult:{status:"Already"}}),
+    account({id:"success",label:"备用成功",siteType:"AnyRouter",lastResult:{status:"Success"}})
+  ]);
+  const order=()=>Array.from(p.$("#cards").children,card=>card.dataset.account);
+  p.click('[data-type="AnyRouter"]');assert.deepEqual(order(),["already","success","pending","failed"]);
+  p.$("#search").value="主力";p.event(p.$("#search"),"input");assert.deepEqual(order(),["already","pending","failed"]);
+  p.click('[data-type="all"]');assert.deepEqual(order(),["other","already","pending","failed"]);
+  p.$("#search").value="";p.event(p.$("#search"),"input");assert.deepEqual(order(),["other","already","success","pending","failed"]);
+  assert.equal(p.calls.length,1);assert.equal(p.calls[0].route,"accounts");
+});
+test("刷新后随最新签到结果重排，成功账号恢复前列，失败账号移到末尾",async t=>{
+  const rows=[account({id:"a",lastResult:{status:"Failed"}}),account({id:"b",lastResult:{status:"Success"}}),account({id:"c"})];
+  const p=await page(t,rows),order=()=>Array.from(p.$("#cards").children,card=>card.dataset.account);
+  assert.deepEqual(order(),["b","c","a"]);
+  rows[0].lastResult={status:"Success"};rows[1].lastResult={status:"AuthExpired"};
+  p.click("#refresh");await until(()=>!p.$("#refresh").disabled);
+  assert.deepEqual(order(),["a","c","b"]);
+  rows[1].lastResult={status:"Already"};p.click("#refresh");await until(()=>!p.$("#refresh").disabled);
+  assert.deepEqual(order(),["a","b","c"]);
+  assert.equal(p.calls.length,3);assert.ok(p.calls.every(c=>c.method==="GET"&&c.route==="accounts"));
+});
+test("签到任务完成后账号自动重排，仅改变展示顺序",async t=>{
+  const rows=[account({id:"a",lastResult:{status:"Failed"}}),account({id:"b",lastResult:{status:"Success"}})];
+  const p=await page(t,rows,async(_,route)=>{
+    if(route==="checkin/start")return{id:"sort-job",name:"js-checkin-run",state:"Running",progress:{completed:0,total:2,results:[]}};
+    if(route.startsWith("jobs/status")){
+      rows[0].lastResult={status:"Success"};rows[1].lastResult={status:"AuthExpired"};
+      return{id:"sort-job",name:"js-checkin-run",state:"Completed",result:{total:2,results:rows.map(a=>({accountId:a.id,label:a.label,...a.lastResult}))}};
+    }
+  });
+  const order=()=>Array.from(p.$("#cards").children,card=>card.dataset.account);
+  assert.deepEqual(order(),["b","a"]);p.click("#runAll");await until(()=>p.$("#jobTitle").textContent==="正在执行");
+  p.click("#pollJob");await until(()=>p.$("#jobTitle").textContent==="执行结束"&&!p.$("#refresh").disabled&&order()[0]==="a");
+  assert.deepEqual(order(),["a","b"]);assert.deepEqual(rows.map(a=>a.id),["a","b"]);
+  const writes=p.calls.filter(c=>c.method==="POST");assert.equal(writes.length,1);
+  assert.equal(writes[0].route,"checkin/start");assert.deepEqual(writes[0].body,{all:true});
+  assert.equal(p.calls.filter(c=>c.route==="accounts").length,2);
+});
 test("可视化/JSON 双向切换保留完整凭据，非法 JSON 不丢失文本",async t=>{
   const p=await page(t,[account()]);p.click('[data-action="edit"]');
   assert.equal(p.$('[name="cookie"]').value,"session=COOKIE_SECRET");p.click("#jsonTab");
@@ -417,6 +483,17 @@ test("账号与任务响应正文作为文本显示，不执行 HTML，保留括
   p.click('[data-action="run"]');await until(()=>!p.$("#jobPanel").hidden);
   assert.equal(p.$("#jobResults .result-msg").textContent,raw);
   assert.equal(p.$("#jobResults script"),null);assert.equal(p.dom.window.REMOTE_EXECUTED,undefined);
+});
+for(const siteType of ["NewAPI","AnyRouter"])test(`${siteType} 密码登录失败在账号与任务中直接显示响应`,async t=>{
+  const raw='{\n  "success": false,\n  "message": "用户名或密码错误（上游响应）"\n}';
+  const result={label:"账号",status:"AuthExpired",httpStatus:200,message:raw};
+  const p=await page(t,[account({siteType,authMode:"password",cookie:"",userId:"",username:"test-user",password:"TEST_PASSWORD",hasPassword:true,lastResult:result})],async(_,route)=>{
+    if(route==="checkin/start")return{id:"login-response",name:"js-checkin-run",state:"Completed",result:{total:1,results:[result]}};
+  });
+  assert.equal(p.$(".result-msg").textContent,raw);assert.match(p.$(".result").textContent,/HTTP 200/);
+  p.click('[data-action="run"]');await until(()=>!p.$("#jobPanel").hidden);
+  assert.equal(p.$("#jobResults .result-msg").textContent,raw);assert.match(p.$("#jobResults").textContent,/HTTP 200/);
+  assert.doesNotMatch(p.$("#cards").textContent+p.$("#jobResults").textContent,/登录未完成|请检查凭据、验证码或二次验证/);
 });
 test("成功响应同样展示正文",async t=>{
   const raw='{"message":"签到成功","success":true}';

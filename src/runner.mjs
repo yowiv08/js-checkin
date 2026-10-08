@@ -84,14 +84,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
     let checkinConfig = prepared.config;
     if (passwordAuth(record.config) && record.config.siteType !== "AgentRouter") {
       const {route:loginRoute,...loginSpec} = loginRequest(prepared.config);
-      let loginResponse;
-      try { loginResponse = await client.request(loginSpec); }
-      catch(error) {
-        if(cancelled(error))throw error;
-        const safe = new InputError(503,"登录请求失败或超时，未自动重试；尚未发送签到");
-        if(["host.denied","host.proxy_pool_unavailable"].includes(error?.code))dispatched=false;
-        throw safe;
-      }
+      const loginResponse = await client.request(loginSpec);
       const result = interpret("NewAPI",loginResponse);
       let loginData;
       try { loginData = exactJson(loginResponse.bodyText); } catch {}
@@ -101,7 +94,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
         const status = result.status === "Challenge" || loginData?.data?.require_2fa || loginData?.data?.requires_2fa ||
           loginData?.data?.two_factor_required || loginData?.require_2fa ? "Challenge"
           : ["AuthExpired","RateLimited","Uncertain"].includes(result.status) ? result.status : "Failed";
-        outcome = finish(status,"登录未完成，未发送签到；请检查凭据、验证码或二次验证",{httpStatus:loginResponse.statusCode});
+        outcome = finish(status,result.message,{httpStatus:result.httpStatus});
         if(status==="AuthExpired")await forgetAgentSession(ctx,record);
         await renew(ctx,lease);await persist(ctx,record,outcome,null,attemptId);
         return outcome;
@@ -112,7 +105,7 @@ export async function runOne(ctx, accountId, { automatic = false, acknowledgeUnc
           (record.config.siteType === "AnyRouter" ? "/api/user/sign_in" : "/api/user/checkin");
         requireAgentSession(session,path);
       } catch {
-        outcome = finish("Failed","登录响应未提供完整且路径适用的会话，未发送签到",{httpStatus:loginResponse.statusCode});
+        outcome = finish("Failed",result.message,{httpStatus:result.httpStatus});
         await renew(ctx,lease);await persist(ctx,record,outcome,null,attemptId);
         return outcome;
       }
